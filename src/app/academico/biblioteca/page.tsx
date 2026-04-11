@@ -749,11 +749,37 @@ function CapituloRow({ cap, index, total, onCycleStatus, onUpdate, onRemove, onM
           </button>
         </div>
 
-        {/* Status button */}
-        <button onClick={onCycleStatus} className="shrink-0 px-1.5 py-0.5 rounded-md text-[10px] font-dm font-medium hover:brightness-110 transition-all"
-          style={{ background: gc.bg, color: gc.text }} title={LABEL_STATUS_LEITURA_FULL[status]}>
-          {LABEL_GRUPO_STATUS[grupo]}
-        </button>
+        {/* Status select */}
+        <select
+          value={status}
+          onChange={e => onUpdate({ status_leitura: e.target.value as StatusLeituraFull, herda_status: false })}
+          className="shrink-0 px-1.5 py-0.5 rounded-md text-[10px] font-dm font-medium appearance-none cursor-pointer border-0 outline-none"
+          style={{ background: gc.bg, color: gc.text, maxWidth: 120 }}
+        >
+          <optgroup label="Fila">
+            <option value="quero_ler">Quero ler</option>
+          </optgroup>
+          <optgroup label="Para fazer">
+            <option value="para_ler">Para ler</option>
+            <option value="para_ler_resumir">Para ler e resumir</option>
+            <option value="para_ler_resumir_mapa">Ler + resumir + mapa</option>
+          </optgroup>
+          <optgroup label="Em progresso">
+            <option value="lendo_rapido">Lendo rapidamente</option>
+            <option value="lendo">Lendo</option>
+            <option value="lendo_resumindo">Lendo e resumindo</option>
+            <option value="lendo_resumindo_mapa">Lendo + resumindo + mapa</option>
+          </optgroup>
+          <optgroup label="Concluído">
+            <option value="lido_rapido">Lido rapidamente</option>
+            <option value="lido">Lido</option>
+            <option value="lido_resumido">Lido e resumido</option>
+            <option value="lido_resumido_mapa">Lido + resumido + mapa</option>
+          </optgroup>
+          <optgroup label="—">
+            <option value="abandonado">Abandonado</option>
+          </optgroup>
+        </select>
 
         <div className="flex-1 min-w-0">
           <input
