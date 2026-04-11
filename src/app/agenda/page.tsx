@@ -20,6 +20,7 @@ import { getAtividades, updateAtividade, getTemplates, onDataChange } from "@/li
 import { useAuth } from "@/contexts/AuthContext";
 import { getTodasAtividades as getForjaAtividades } from "@/lib/forja-data";
 import { getConteudos as getUsinaConteudos } from "@/lib/usina-data";
+import { getTarefasLivrosComPrazo } from "@/lib/academico-data";
 import { getDisciplinasCursando, getTarefasPendentes, getDisciplina, getTarefa, updateTarefa as updateAcTarefa } from "@/lib/academico-data";
 import { fillTemplate, buildWhatsAppUrl, buildMessageVars } from "@/lib/whatsapp";
 import { fadeUp, staggerChild } from "@/lib/animations";
@@ -106,7 +107,33 @@ export default function AgendaPage() {
   }, [viewMode, currentDate]);
 
   const activities = useMemo(
-    () => getAtividades(dateRange),
+    () => {
+      const base = getAtividades(dateRange);
+      // Inject book tasks with deadlines
+      try {
+        for (const { tarefa, livro } of getTarefasLivrosComPrazo()) {
+          if (!tarefa.prazo) continue;
+          const d = new Date(tarefa.prazo);
+          if (d >= dateRange.start && d <= dateRange.end) {
+            base.push({
+              id: `book-${livro.id}-${tarefa.id}`,
+              terapeuta_id: '',
+              tipo: 'outro' as any,
+              titulo: `📖 ${tarefa.titulo} (${livro.titulo})`,
+              descricao: '',
+              data_inicio: `${tarefa.prazo}T09:00:00`,
+              data_fim: `${tarefa.prazo}T10:00:00`,
+              status: tarefa.status === 'concluida' ? 'realizada' as any : 'pendente' as any,
+              recorrencia: 'nenhuma' as any,
+              presenca_registrada: false,
+              created_at: tarefa.created_at,
+              updated_at: tarefa.created_at,
+            } as any);
+          }
+        }
+      } catch {}
+      return base;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [dateRange.start.getTime(), dateRange.end.getTime(), refreshKey]
   );

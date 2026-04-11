@@ -286,29 +286,7 @@ export function deletePaciente(id: string): boolean {
 export function getAtividades(dateRange?: { start: Date; end: Date }): Atividade[] {
   let result = [...atividades];
 
-  // Inject book tasks with deadlines as virtual agenda activities
-  try {
-    const { getTarefasLivrosComPrazo } = require('./academico-data');
-    const bookTasks = getTarefasLivrosComPrazo();
-    for (const { tarefa, livro } of bookTasks) {
-      if (tarefa.prazo) {
-        result.push({
-          id: `book-${livro.id}-${tarefa.id}`,
-          terapeuta_id: _currentUserId || '',
-          tipo: 'outro' as any,
-          titulo: `📖 ${tarefa.titulo} (${livro.titulo})`,
-          descricao: '',
-          data_inicio: `${tarefa.prazo}T09:00:00`,
-          data_fim: `${tarefa.prazo}T10:00:00`,
-          status: tarefa.status === 'concluida' ? 'realizada' as any : 'pendente' as any,
-          recorrencia: 'nenhuma' as any,
-          presenca_registrada: false,
-          created_at: tarefa.created_at,
-          updated_at: tarefa.created_at,
-        } as Atividade);
-      }
-    }
-  } catch {}
+  // Book tasks are injected via getAtividadesWithBookTasks() wrapper
 
   if (dateRange) {
     result = result.filter(a => {
