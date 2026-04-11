@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ToastProvider } from "@/contexts/ToastContext";
+import AuthGate from "@/components/AuthGate";
 
 const fraunces = Fraunces({
   subsets: ["latin"], weight: ["300", "500", "700"],
@@ -39,13 +40,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <a href="#main-content" className="skip-link">Ir para o conteúdo principal</a>
-        <AuthProvider>
-          <ThemeProvider>
-            <ToastProvider>
-              {children}
-            </ToastProvider>
-          </ThemeProvider>
-        </AuthProvider>
+        <AuthGate>
+          <AuthProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                {children}
+              </ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
+        </AuthGate>
       </body>
     </html>
   );
