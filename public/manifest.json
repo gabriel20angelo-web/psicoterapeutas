@@ -1,0 +1,25 @@
+{
+  "name": "Meu Consultório",
+  "short_name": "Consultório",
+  "description": "Gestão clínica pessoal para terapeutas",
+  "start_url": "/psicoterapeutas/",
+  "scope": "/psicoterapeutas/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#ea580c",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/psicoterapeutas/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/psicoterapeutas/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

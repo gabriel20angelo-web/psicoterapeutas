@@ -6,8 +6,8 @@ import { searchGlobal, getPacientes, type SearchResult } from "@/lib/data";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-const TYPE_ICONS = { paciente: Users, atividade: CalendarDays, comunidade: Globe, anotacao: FileText };
-const TYPE_LABELS = { paciente: 'Pacientes', atividade: 'Agenda', comunidade: 'Comunidade', anotacao: 'Anotações' };
+const TYPE_ICONS: Record<string, any> = { paciente: Users, atividade: CalendarDays, anotacao: FileText };
+const TYPE_LABELS: Record<string, string> = { paciente: 'Pacientes', atividade: 'Agenda', anotacao: 'Anotações' };
 
 // ─── Notes search helpers ───
 interface NoteSearchResult {
@@ -313,7 +313,7 @@ export default function GlobalSearch() {
                 )}
 
                 {!query && recentSearches.length === 0 && (
-                  <p className="p-6 text-center font-dm text-sm text-[var(--text-tertiary)]">Digite para buscar em pacientes, agenda, anotações e comunidade</p>
+                  <p className="p-6 text-center font-dm text-sm text-[var(--text-tertiary)]">Digite para buscar em pacientes, agenda e anotações</p>
                 )}
               </div>
             </motion.div>

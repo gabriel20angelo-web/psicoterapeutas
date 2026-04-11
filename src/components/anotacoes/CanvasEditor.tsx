@@ -2,8 +2,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Plus, Trash2, Save, Link2, ZoomIn, ZoomOut, Maximize } from "lucide-react";
 import Button from "@/components/ui/Button";
+import { getPaciente } from "@/lib/data";
 
-// ─── Types (JSON Canvas inspired) ───
+// ─── Types (JSON Canvas / Obsidian compatible) ───
 
 interface CanvasNode {
   id: string;
@@ -13,7 +14,7 @@ interface CanvasNode {
   width: number;
   height: number;
   content: string;
-  color: number; // index into COLORS
+  color: number;
 }
 
 interface CanvasEdge {
@@ -34,6 +35,31 @@ interface CanvasFile {
   viewport: CanvasViewport;
 }
 
+// Obsidian .canvas format types
+interface ObsidianNode {
+  id: string;
+  type: "text";
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color?: string;
+}
+
+interface ObsidianEdge {
+  id: string;
+  fromNode: string;
+  fromSide: "right" | "left" | "top" | "bottom";
+  toNode: string;
+  toSide: "right" | "left" | "top" | "bottom";
+}
+
+interface ObsidianCanvas {
+  nodes: ObsidianNode[];
+  edges: ObsidianEdge[];
+}
+
 // ─── Constants ───
 
 const NODE_COLORS = [
@@ -52,12 +78,92 @@ const GRID_SIZE = 20;
 const DEFAULT_WIDTH = 240;
 const DEFAULT_HEIGHT = 120;
 
-function defaultKey(pacienteId: string) { return `allos-canvas-${pacienteId}`; }
-
 const EMPTY_CANVAS: CanvasFile = { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } };
 
-function loadCanvas(key: string): CanvasFile {
-  if (typeof window === "undefined") return EMPTY_CANVAS;
+// ─── Obsidian ↔ App format conversion ───
+
+function obsidianToApp(obs: ObsidianCanvas): CanvasFile {
+  return {
+    nodes: obs.nodes.map(n => ({
+      id: n.id, type: "text" as const,
+      x: n.x, y: n.y, width: n.width, height: n.height,
+      content: n.text || "",
+      color: n.color ? parseInt(n.color, 10) || 0 : 0,
+    })),
+    edges: obs.edges.map(e => ({
+      id: e.id, fromNode: e.fromNode, toNode: e.toNode,
+    })),
+    viewport: { x: 0, y: 0, zoom: 1 },
+  };
+}
+
+function appToObsidian(app: CanvasFile): ObsidianCanvas {
+  const nodesMap = new Map(app.nodes.map(n => [n.id, n]));
+  return {
+    nodes: app.nodes.map(n => ({
+      id: n.id, type: "text" as const,
+      text: n.content,
+      x: n.x, y: n.y, width: n.width, height: n.height,
+      ...(n.color > 0 ? { color: String(n.color) } : {}),
+    })),
+    edges: app.edges.map(e => {
+      const from = nodesMap.get(e.fromNode);
+      const to = nodesMap.get(e.toNode);
+      const { fromSide, toSide } = computeSides(from, to);
+      return { id: e.id, fromNode: e.fromNode, fromSide, toNode: e.toNode, toSide };
+    }),
+  };
+}
+
+function computeSides(from?: CanvasNode, to?: CanvasNode): { fromSide: "right" | "left" | "top" | "bottom"; toSide: "right" | "left" | "top" | "bottom" } {
+  if (!from || !to) return { fromSide: "right", toSide: "left" };
+  const dx = (to.x + to.width / 2) - (from.x + from.width / 2);
+  const dy = (to.y + to.height / 2) - (from.y + from.height / 2);
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx > 0 ? { fromSide: "right", toSide: "left" } : { fromSide: "left", toSide: "right" };
+  }
+  return dy > 0 ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };
+}
+
+// ─── Storage: Obsidian-first, localStorage fallback ───
+
+function isElectron(): boolean {
+  return typeof window !== "undefined" && !!window.electronAPI;
+}
+
+function sanitizeName(name: string): string {
+  return name.replace(/[<>:"/\\|?*]/g, "_").trim();
+}
+
+async function getCanvasPath(pacienteId: string): Promise<string | null> {
+  if (!isElectron()) return null;
+  const paciente = getPaciente(pacienteId);
+  if (!paciente) return null;
+  const vaultPath = await window.electronAPI!.vault.getPath();
+  return `${vaultPath}/${sanitizeName(paciente.nome)}/Canvas.canvas`;
+}
+
+async function loadCanvasAsync(pacienteId: string): Promise<CanvasFile> {
+  if (isElectron()) {
+    const filePath = await getCanvasPath(pacienteId);
+    if (filePath) {
+      const raw = await window.electronAPI!.fs.readFile(filePath);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          // Obsidian format uses "text", app uses "content"
+          if (parsed.nodes?.[0]?.text !== undefined || (parsed.nodes?.length === 0 && parsed.edges)) {
+            return obsidianToApp(parsed);
+          }
+          // Already in app format (legacy localStorage export)
+          if (parsed.viewport) return parsed;
+          return obsidianToApp(parsed);
+        } catch {}
+      }
+    }
+  }
+  // Fallback: localStorage
+  const key = `allos-canvas-${pacienteId}`;
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return EMPTY_CANVAS;
@@ -65,7 +171,7 @@ function loadCanvas(key: string): CanvasFile {
     if (parsed.blocks) {
       return {
         nodes: parsed.blocks.map((b: any) => ({
-          id: b.id, type: "text", x: b.x, y: b.y,
+          id: b.id, type: "text" as const, x: b.x, y: b.y,
           width: b.width || DEFAULT_WIDTH, height: DEFAULT_HEIGHT,
           content: b.content || "", color: typeof b.color === "number" ? b.color : 0,
         })),
@@ -77,8 +183,17 @@ function loadCanvas(key: string): CanvasFile {
   } catch { return EMPTY_CANVAS; }
 }
 
-function saveCanvas(key: string, data: CanvasFile) {
-  localStorage.setItem(key, JSON.stringify(data));
+async function saveCanvasAsync(pacienteId: string, data: CanvasFile): Promise<void> {
+  if (isElectron()) {
+    const filePath = await getCanvasPath(pacienteId);
+    if (filePath) {
+      const obsidian = appToObsidian(data);
+      await window.electronAPI!.fs.writeFile(filePath, JSON.stringify(obsidian, null, 2));
+      return;
+    }
+  }
+  // Fallback
+  localStorage.setItem(`allos-canvas-${pacienteId}`, JSON.stringify(data));
 }
 
 // ─── Bezier path between two node edges ───
@@ -124,14 +239,12 @@ function getEdgePath(from: CanvasNode, to: CanvasNode): string {
 
 interface CanvasEditorProps {
   pacienteId: string;
-  /** Custom storage key. Defaults to `allos-canvas-{pacienteId}` */
   storageKey?: string;
 }
 
 export default function CanvasEditor({ pacienteId, storageKey }: CanvasEditorProps) {
-  const key = storageKey || defaultKey(pacienteId);
-  const [canvas, setCanvas] = useState<CanvasFile>(() => loadCanvas(key));
-  const [viewport, setViewport] = useState<CanvasViewport>(() => canvas.viewport);
+  const [canvas, setCanvas] = useState<CanvasFile>(EMPTY_CANVAS);
+  const [viewport, setViewport] = useState<CanvasViewport>({ x: 0, y: 0, zoom: 1 });
   const [draggingNode, setDraggingNode] = useState<string | null>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, nodeX: 0, nodeY: 0 });
   const [panning, setPanning] = useState(false);
@@ -143,10 +256,15 @@ export default function CanvasEditor({ pacienteId, storageKey }: CanvasEditorPro
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const loaded = loadCanvas(key);
-    setCanvas(loaded);
-    setViewport(loaded.viewport);
-  }, [key]);
+    let cancelled = false;
+    loadCanvasAsync(pacienteId).then(loaded => {
+      if (!cancelled) {
+        setCanvas(loaded);
+        setViewport(loaded.viewport);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [pacienteId]);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -159,14 +277,15 @@ export default function CanvasEditor({ pacienteId, storageKey }: CanvasEditorPro
 
   // Auto-save debounced (1.5s after last change)
   useEffect(() => {
+    if (canvas.nodes.length === 0 && canvas.edges.length === 0) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => {
-      saveCanvas(key, { ...canvas, viewport });
+      saveCanvasAsync(pacienteId, { ...canvas, viewport });
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     }, 1500);
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-  }, [canvas, viewport, key]);
+  }, [canvas, viewport, pacienteId]);
 
   // ── Auto-save viewport into canvas state ──
   const canvasWithViewport = useCallback((): CanvasFile => ({
@@ -175,7 +294,7 @@ export default function CanvasEditor({ pacienteId, storageKey }: CanvasEditorPro
   }), [canvas, viewport]);
 
   const handleSave = () => {
-    saveCanvas(key, canvasWithViewport());
+    saveCanvasAsync(pacienteId, canvasWithViewport());
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };

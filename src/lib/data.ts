@@ -1,9 +1,10 @@
 import type {
-  Paciente, Atividade, Supervisao, AtividadeComunidade,
+  Paciente, Atividade,
   Notificacao, TemplateMensagem, StatusPaciente,
 } from '@/types/database';
 import { supabase } from './supabase';
 import { isWithinInterval, parseISO } from 'date-fns';
+import { createPatientVaultFolder } from './notes';
 
 // ─── LOCAL STORAGE FALLBACK ───
 function loadLocal<T>(key: string): T[] {
@@ -33,18 +34,15 @@ const LS = {
 // ─── IN-MEMORY CACHE ───
 let pacientes: Paciente[] = [];
 let atividades: Atividade[] = [];
-let supervisoes: Supervisao[] = [];
-let atividadesComunidade: AtividadeComunidade[] = [];
 let notificacoes: Notificacao[] = [];
 let templates: TemplateMensagem[] = [];
 let _currentUserId: string | null = null;
 let _initialized = false;
 let _initializing = false;
-let _useSupabase = false; // true if Supabase tables exist
+let _useSupabase = false;
 let _dataVersion = 0;
 const _listeners: Set<() => void> = new Set();
 
-// Subscribe to data changes (components call this to re-render on mutations)
 export function onDataChange(cb: () => void): () => void {
   _listeners.add(cb);
   return () => _listeners.delete(cb);
@@ -55,11 +53,9 @@ function notifyChange() {
   _listeners.forEach(cb => cb());
 }
 
-// Sync across tabs via storage events
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
     if (e.key && Object.values(LS).includes(e.key as any)) {
-      // Another tab changed data — reload from localStorage
       if (e.key === LS.atividades) atividades = loadLocal(LS.atividades);
       if (e.key === LS.pacientes) pacientes = loadLocal(LS.pacientes);
       if (e.key === LS.templates) templates = loadLocal(LS.templates);
@@ -72,14 +68,13 @@ export function getDataVersion(): number {
   return _dataVersion;
 }
 
-// ─── INITIALIZATION (call once after auth) ───
+// ─── INITIALIZATION ───
 export async function initializeData(userId: string): Promise<void> {
   if (_initialized && _currentUserId === userId) return;
   if (_initializing) return;
   _initializing = true;
   _currentUserId = userId;
 
-  // Try Supabase first
   try {
     const [pRes, aRes, tRes, nRes] = await Promise.all([
       supabase.from('pacientes').select('*').eq('terapeuta_id', userId).order('nome'),
@@ -88,7 +83,6 @@ export async function initializeData(userId: string): Promise<void> {
       supabase.from('notificacoes').select('*').eq('terapeuta_id', userId).order('created_at', { ascending: false }),
     ]);
 
-    // Check if Supabase tables exist (no error = tables exist)
     if (!pRes.error && !aRes.error) {
       _useSupabase = true;
       pacientes = pRes.data || [];
@@ -96,24 +90,19 @@ export async function initializeData(userId: string): Promise<void> {
       templates = tRes.data || [];
       notificacoes = nRes.data || [];
 
-      // Merge: if localStorage has atividades with temp IDs (a-...), keep the localStorage version
-      // because Supabase might not have received the update yet
       const localAtividades = loadLocal<Atividade>(LS.atividades);
       if (localAtividades.length > 0) {
-        // Find local entries that don't exist in Supabase (temp IDs)
         const supabaseIds = new Set(atividades.map(a => a.id));
         const oneDayAgo = Date.now() - 86400000;
         const localOnly = localAtividades.filter(a => {
           if (supabaseIds.has(a.id)) return false;
           if (!a.id.startsWith('a-')) return false;
-          // Clean up orphans older than 24h
           const timestamp = parseInt(a.id.split('-')[1] || '0', 10);
           if (timestamp < oneDayAgo) return false;
           return true;
         });
         if (localOnly.length > 0) {
           atividades.push(...localOnly);
-          // Try to sync these to Supabase
           for (const a of localOnly) {
             const { id: _id, paciente: _p, ...insertData } = a as Atividade & { paciente?: any };
             supabase.from('atividades').insert(insertData).select().single().then(({ data: row }) => {
@@ -127,12 +116,10 @@ export async function initializeData(userId: string): Promise<void> {
         }
       }
 
-      // Save merged data to localStorage
       saveLocal(LS.pacientes, pacientes);
       saveLocal(LS.atividades, atividades);
       saveLocal(LS.templates, templates);
 
-      // Seed default templates if none exist
       if (templates.length === 0) {
         const defaults = [
           { terapeuta_id: userId, nome: 'Confirmação padrão', tipo: 'confirmacao', conteudo: 'Olá {nome_paciente}, confirmando nossa sessão no dia {data_sessao} às {horario_sessao}. Até lá!' },
@@ -144,7 +131,6 @@ export async function initializeData(userId: string): Promise<void> {
           templates = data;
           saveLocal(LS.templates, templates);
         } else {
-          // Supabase insert failed — use defaults locally
           templates = defaults.map((d, i) => ({ ...d, id: `tmpl-${i}`, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })) as TemplateMensagem[];
           saveLocal(LS.templates, templates);
         }
@@ -155,7 +141,6 @@ export async function initializeData(userId: string): Promise<void> {
       throw new Error("Supabase tables not found");
     }
   } catch (e) {
-    // Fallback: load from localStorage
     _useSupabase = false;
     if (process.env.NODE_ENV === 'development') console.warn("[Data] Supabase indisponível, usando localStorage");
     pacientes = loadLocal(LS.pacientes);
@@ -163,7 +148,6 @@ export async function initializeData(userId: string): Promise<void> {
     templates = loadLocal(LS.templates);
     notificacoes = loadLocal(LS.notificacoes);
 
-    // Seed default templates if none
     if (templates.length === 0) {
       templates = [
         { id: 'tmpl-0', terapeuta_id: userId, nome: 'Confirmação padrão', tipo: 'confirmacao' as const, conteudo: 'Olá {nome_paciente}, confirmando nossa sessão no dia {data_sessao} às {horario_sessao}. Até lá!', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
@@ -227,7 +211,7 @@ export function getPaciente(id: string): Paciente | undefined {
 
 export function createPaciente(data: Omit<Paciente, 'id' | 'created_at' | 'updated_at'>): Paciente {
   const terapeutaId = _currentUserId || data.terapeuta_id;
-  if (!terapeutaId) throw new Error("Usuário não autenticado");
+  if (!terapeutaId) throw new Error("Usuário não configurado");
   const novo: Paciente = {
     ...data,
     terapeuta_id: terapeutaId,
@@ -239,7 +223,9 @@ export function createPaciente(data: Omit<Paciente, 'id' | 'created_at' | 'updat
   saveLocal(LS.pacientes, pacientes);
   notifyChange();
 
-  // Persist to Supabase if available
+  // Create Obsidian vault folder for this patient
+  createPatientVaultFolder(novo.nome).catch(() => {});
+
   if (_useSupabase) {
     const { id: _oldId, ...rest } = novo;
     supabase.from('pacientes').insert({ ...rest }).select().single().then(({ data: row, error }) => {
@@ -278,11 +264,9 @@ export function deletePaciente(id: string): boolean {
   pacientes = pacientes.filter(p => p.id !== id);
   const deleted = pacientes.length < len;
   if (deleted) {
-    // Cascade: delete all sessions and notes for this patient
     const sessionsBefore = atividades.length;
     atividades = atividades.filter(a => a.paciente_id !== id);
     saveLocal(LS.pacientes, pacientes);
-    // Clean orphaned notes
     try {
       localStorage.removeItem(`allos-notes-${id}`);
       localStorage.removeItem(`allos-prenotes-${id}`);
@@ -386,63 +370,6 @@ export function deleteAtividade(id: string): boolean {
   return deleted;
 }
 
-// ─── SUPERVISÕES (kept in-memory for now) ───
-export function getSupervisoesByAtividade(atividadeId: string): Supervisao[] {
-  return supervisoes
-    .filter(s => s.atividade_id === atividadeId)
-    .map(s => ({ ...s, paciente: pacientes.find(p => p.id === s.paciente_id) }));
-}
-
-export function getSupervisoesByPaciente(pacienteId: string): (Supervisao & { atividade?: Atividade })[] {
-  return supervisoes
-    .filter(s => s.paciente_id === pacienteId)
-    .map(s => ({ ...s, atividade: atividades.find(a => a.id === s.atividade_id), paciente: pacientes.find(p => p.id === s.paciente_id) }));
-}
-
-export function createSupervisao(data: Omit<Supervisao, 'id' | 'created_at'>): Supervisao {
-  const nova: Supervisao = { ...data, id: `s-${Date.now()}`, created_at: new Date().toISOString() };
-  supervisoes.push(nova);
-  return nova;
-}
-
-// ─── COMUNIDADE (kept in-memory for now) ───
-export function getAtividadesComunidade(filters?: {
-  tipo?: 'canonico' | 'comunidade' | 'todos';
-}): AtividadeComunidade[] {
-  let result = [...atividadesComunidade];
-  if (filters?.tipo && filters.tipo !== 'todos') {
-    result = result.filter(a => a.tipo === filters.tipo);
-  }
-  result.sort((a, b) => {
-    if (a.tipo === 'canonico' && b.tipo !== 'canonico') return -1;
-    if (b.tipo === 'canonico' && a.tipo !== 'canonico') return 1;
-    return new Date(a.data_inicio).getTime() - new Date(b.data_inicio).getTime();
-  });
-  return result;
-}
-
-export function createAtividadeComunidade(data: Omit<AtividadeComunidade, 'id' | 'created_at' | 'updated_at' | 'total_inscritos' | 'inscrito'>): AtividadeComunidade {
-  const nova: AtividadeComunidade = {
-    ...data,
-    id: `ac-${Date.now()}`,
-    total_inscritos: 0,
-    inscrito: false,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-  atividadesComunidade.push(nova);
-  return nova;
-}
-
-export function toggleInscricao(atividadeId: string): boolean {
-  const idx = atividadesComunidade.findIndex(a => a.id === atividadeId);
-  if (idx === -1) return false;
-  const a = atividadesComunidade[idx];
-  a.inscrito = !a.inscrito;
-  a.total_inscritos = (a.total_inscritos || 0) + (a.inscrito ? 1 : -1);
-  return a.inscrito;
-}
-
 // ─── NOTIFICAÇÕES ───
 export function getNotificacoes(unreadOnly = false): Notificacao[] {
   let result = [...notificacoes];
@@ -485,7 +412,7 @@ export function updateTemplate(id: string, conteudo: string): TemplateMensagem |
 
 // ─── BUSCA GLOBAL ───
 export interface SearchResult {
-  type: 'paciente' | 'atividade' | 'comunidade';
+  type: 'paciente' | 'atividade';
   id: string;
   title: string;
   subtitle: string;
@@ -507,13 +434,6 @@ export function searchGlobal(query: string): SearchResult[] {
     if (a.titulo.toLowerCase().includes(q)) {
       const d = new Date(a.data_inicio);
       results.push({ type: 'atividade', id: a.id, title: a.titulo, subtitle: `${d.toLocaleDateString('pt-BR')} · ${a.status}`, link: '/agenda' });
-    }
-  });
-
-  atividadesComunidade.forEach(a => {
-    if (a.titulo.toLowerCase().includes(q)) {
-      const d = new Date(a.data_inicio);
-      results.push({ type: 'comunidade', id: a.id, title: a.titulo, subtitle: `${d.toLocaleDateString('pt-BR')} · ${a.categoria.replace('_', ' ')}`, link: '/agenda?tab=formacao' });
     }
   });
 
@@ -685,7 +605,7 @@ export function getAlertasCruzados(): AlertaCruzado[] {
 }
 
 // ─── STATS ───
-export function getHorasClinicas(): { sessoes: number; supervisao: number; formacao: number; total: number } {
+export function getHorasClinicas(): { sessoes: number; supervisao: number; total: number } {
   const realizadas = atividades.filter(a => a.status === 'realizada');
   const sessaoHoras = realizadas.filter(a => a.tipo === 'sessao').reduce((sum, a) => {
     return sum + (new Date(a.data_fim).getTime() - new Date(a.data_inicio).getTime()) / 3600000;
@@ -693,17 +613,9 @@ export function getHorasClinicas(): { sessoes: number; supervisao: number; forma
   const supHoras = realizadas.filter(a => a.tipo === 'supervisao').reduce((sum, a) => {
     return sum + (new Date(a.data_fim).getTime() - new Date(a.data_inicio).getTime()) / 3600000;
   }, 0);
-  const formacaoHoras = atividadesComunidade
-    .filter(a => a.tipo === 'canonico' && a.inscrito)
-    .reduce((sum, a) => {
-      const d = new Date(a.data_inicio);
-      if (d < new Date()) return sum + (new Date(a.data_fim).getTime() - d.getTime()) / 3600000;
-      return sum;
-    }, 0);
   return {
     sessoes: Math.round(sessaoHoras * 10) / 10,
     supervisao: Math.round(supHoras * 10) / 10,
-    formacao: Math.round(formacaoHoras * 10) / 10,
-    total: Math.round((sessaoHoras + supHoras + formacaoHoras) * 10) / 10,
+    total: Math.round((sessaoHoras + supHoras) * 10) / 10,
   };
 }

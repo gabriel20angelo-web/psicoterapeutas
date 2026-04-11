@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import ForjaNav from "@/components/forja/ForjaNav";
@@ -110,7 +110,11 @@ function PomodoroDots({
 
 // ─── Main Page ───
 
-export default function FocoPage() {
+export default function FocoPageWrapper() {
+  return <Suspense><FocoPageInner /></Suspense>;
+}
+
+function FocoPageInner() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
 

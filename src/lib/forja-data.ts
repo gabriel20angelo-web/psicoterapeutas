@@ -784,6 +784,14 @@ import {
   type Editoria as UsinaEditoria,
 } from "./usina-data";
 
+import {
+  getDisciplinasCursando as getAcDisciplinas,
+  getTarefas as getAcTarefas,
+  getConteudos as getAcConteudos,
+  updateTarefa as updateAcTarefa,
+  updateConteudo as updateAcConteudo,
+} from "./academico-data";
+
 // Pasta virtual da Usina
 export const USINA_PASTA: Pasta = {
   id: "usina-pasta",
@@ -900,17 +908,17 @@ export const getTarefasUsina = getAtividadesUsina;
 
 // Combina pastas nativas + pasta Usina
 export function getTodasPastas(): Pasta[] {
-  return [...getPastas(), USINA_PASTA];
+  return [...getPastas(), USINA_PASTA, ACADEMICO_PASTA];
 }
 
 // Combina projetos nativos + projetos Usina
 export function getTodosProjetos(): Projeto[] {
-  return [...getProjetos(), ...getProjetosUsina()];
+  return [...getProjetos(), ...getProjetosUsina(), ...getProjetosAcademico()];
 }
 
 // Combina atividades nativas + atividades Usina
 export function getTodasAtividades(): Atividade[] {
-  return [...getAtividades(), ...getAtividadesUsina()];
+  return [...getAtividades(), ...getAtividadesUsina(), ...getAtividadesAcademico()];
 }
 
 // Backward-compatible alias
@@ -943,6 +951,12 @@ export function completarAtividadeUnificada(id: string) {
   if (id.startsWith("usina-t-")) {
     const realId = id.replace("usina-t-", "");
     updateUsinaTarefa(realId, { status: "concluida", concluida_em: now() } as any);
+  } else if (id.startsWith("academico-t-")) {
+    const realId = id.replace("academico-t-", "");
+    updateAcTarefa(realId, { status: "concluida" as any });
+  } else if (id.startsWith("academico-co-")) {
+    const realId = id.replace("academico-co-", "");
+    updateAcConteudo(realId, { status_estudo: "dominado" as any });
   } else {
     completarAtividade(id);
   }
@@ -950,3 +964,95 @@ export function completarAtividadeUnificada(id: string) {
 
 // Backward-compatible alias
 export const completarTarefaUnificada = completarAtividadeUnificada;
+
+// ═══════════════════════════════════════════════════
+// INTEGRAÇÃO ACADÊMICO → FORJA
+// Traz disciplinas e tarefas acadêmicas como pastas/projetos/atividades virtuais
+// ═══════════════════════════════════════════════════
+
+// (imports moved to Usina import block above)
+
+// Pasta virtual do Acadêmico
+export const ACADEMICO_PASTA: Pasta = {
+  id: "academico-pasta",
+  nome: "Acadêmico",
+  cor: "#10b981",
+  icone: "graduation-cap",
+  ordem: 998,
+  created_at: "2026-01-01T00:00:00Z",
+};
+
+// Converte disciplinas cursando em projetos do Forja
+export function getProjetosAcademico(): Projeto[] {
+  const disciplinas = getAcDisciplinas();
+  return disciplinas.map((d, i) => ({
+    id: `academico-di-${d.id}`,
+    pasta_id: "academico-pasta",
+    nome: d.nome,
+    cor: "#10b981",
+    icone: "book-open",
+    ordem: i,
+    arquivado: false,
+    created_at: d.created_at,
+  }));
+}
+
+// Converte tarefas acadêmicas em atividades do Forja
+export function getAtividadesAcademico(): Atividade[] {
+  const tarefas = getAcTarefas();
+  const conteudos = getAcConteudos().filter(c => c.status_estudo !== "dominado");
+  const TIPO_LABEL: Record<string, string> = { prova: "Prova", trabalho: "Trabalho", licao: "Lição", apresentacao: "Apresentação", seminario: "Seminário", outro: "Outro" };
+  const STATUS_LABEL: Record<string, string> = { nao_estudado: "Não estudado", em_revisao: "Em revisão", dominado: "Dominado" };
+
+  const tarefaAtividades: Atividade[] = tarefas.map((t, i) => ({
+    id: `academico-t-${t.id}`,
+    projeto_id: `academico-di-${t.disciplina_id}`,
+    atividade_pai_id: null,
+    titulo: `${TIPO_LABEL[t.tipo] || t.tipo}: ${t.titulo}`,
+    descricao: t.observacoes || "",
+    notas: "",
+    prioridade: t.tipo === "prova" ? "alta" as const : t.tipo === "trabalho" ? "media" as const : "baixa" as const,
+    data_limite: t.data_entrega || null,
+    lembrete: null,
+    recorrencia: null,
+    pomodoros_estimados: t.tipo === "prova" ? 4 : 2,
+    pomodoros_realizados: 0,
+    tempo_total_seg: 0,
+    status: t.status === "concluida" ? "concluida" as const : "pendente" as const,
+    concluida_em: t.status === "concluida" ? t.updated_at : null,
+    etiqueta_ids: [],
+    ordem: i,
+    created_at: t.created_at,
+    updated_at: t.updated_at,
+  }));
+
+  // Conteúdos de aula como atividades de estudo (para usar Pomodoro)
+  const conteudoAtividades: Atividade[] = conteudos.map((c, i) => ({
+    id: `academico-co-${c.id}`,
+    projeto_id: `academico-di-${c.disciplina_id}`,
+    atividade_pai_id: null,
+    titulo: `📖 Estudar: ${c.titulo}`,
+    descricao: c.modulo_tematico ? `Módulo: ${c.modulo_tematico}` : "",
+    notas: "",
+    prioridade: c.status_estudo === "nao_estudado" ? "media" as const : "baixa" as const,
+    data_limite: c.data_aula || null,
+    lembrete: null,
+    recorrencia: null,
+    pomodoros_estimados: 2,
+    pomodoros_realizados: 0,
+    tempo_total_seg: 0,
+    status: c.status_estudo === "dominado" ? "concluida" as const : "pendente" as const,
+    concluida_em: null,
+    etiqueta_ids: [],
+    ordem: tarefas.length + i,
+    created_at: c.created_at,
+    updated_at: c.updated_at,
+  }));
+
+  return [...tarefaAtividades, ...conteudoAtividades];
+}
+
+// Verifica se atividade é do Acadêmico
+export function isAcademicoAtividade(id: string): boolean {
+  return id.startsWith("academico-t-") || id.startsWith("academico-co-");
+}

@@ -5,10 +5,9 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  CalendarDays, Users, LayoutDashboard, MessageSquare,
-  ExternalLink, Menu, FileText, Shield, X, LogOut, BookOpen, Sparkles, Flame, Settings2,
+  CalendarDays, Users, LayoutDashboard,
+  Menu, FileText, X, BookOpen, Sparkles, Flame, Settings2, GraduationCap,
 } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
 
 interface NavItem {
   label: string;
@@ -22,12 +21,11 @@ const ALL_NAV: NavItem[] = [
   { label: "Painel", href: "/", icon: LayoutDashboard },
   { label: "Agenda", href: "/agenda", icon: CalendarDays },
   { label: "Pacientes", href: "/pacientes", icon: Users },
-  { label: "Equipe", href: "/comunicacao", icon: MessageSquare },
   { label: "PsiDocs", href: "/psidocs", icon: FileText },
   { label: "Usina", href: "/conteudo", icon: Sparkles },
   { label: "Forja", href: "/forja", icon: Flame },
   { label: "Blog", href: "/blog", icon: BookOpen },
-  { label: "Casas", href: "/casas", icon: Shield },
+  { label: "Acadêmico", href: "/academico", icon: GraduationCap },
 ];
 
 function getFilteredNav(): NavItem[] {
@@ -37,14 +35,10 @@ function getFilteredNav(): NavItem[] {
   return ALL_NAV.filter(item => hrefsAtivos.has(item.href));
 }
 
-const ALLOS_URL = process.env.NEXT_PUBLIC_ALLOS_URL || "https://allos.org.br";
-
 export default function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [NAV] = useState(() => getFilteredNav());
-  const { isAdmin, profile } = useAuth();
-  const avatarUrl = profile?.avatar_url;
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -81,16 +75,10 @@ export default function Sidebar() {
           >
             <div className="flex items-center justify-between p-5 pb-2">
               <div className="flex items-center gap-2.5">
-                <Image
-                  src="/icon-allos.png"
-                  alt="Allos"
-                  width={36}
-                  height={36}
-                  className="rounded-lg"
-                />
+                <Image src="/icon-allos.png" alt="App" width={36} height={36} className="rounded-lg" />
                 <div>
-                  <p className="font-fraunces font-bold text-[15px] text-[var(--text-primary)]">Allos</p>
-                  <p className="font-dm text-[10px] tracking-[.28em] text-[var(--text-tertiary)] uppercase -mt-0.5">Terapeutas</p>
+                  <p className="font-fraunces font-bold text-[15px] text-[var(--text-primary)]">Meu</p>
+                  <p className="font-dm text-[10px] tracking-[.28em] text-[var(--text-tertiary)] uppercase -mt-0.5">Consultório</p>
                 </div>
               </div>
               <button onClick={() => setMobileOpen(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--bg-hover)] transition-colors">
@@ -121,49 +109,42 @@ export default function Sidebar() {
             </nav>
 
             <div className="p-4 border-t border-[var(--border-subtle)]">
-              {isAdmin && (
-                <Link href="/admin" onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-dm text-sm font-medium transition-all duration-200 mb-1 ${
-                    isActive("/admin")
-                      ? "text-[var(--orange-500)] bg-[var(--orange-glow)]"
-                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-                  }`}>
-                  <Settings2 size={22} /> Admin
-                </Link>
-              )}
-              <a href={ALLOS_URL} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-2 px-3 py-2.5 font-dm text-xs text-[var(--text-tertiary)] hover:text-[var(--orange-500)] transition-colors">
-                <ExternalLink size={14} /> Site Allos
-              </a>
+              <Link href="/configuracoes" onClick={() => setMobileOpen(false)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-dm text-sm font-medium transition-all duration-200 ${
+                  isActive("/configuracoes")
+                    ? "text-[var(--orange-500)] bg-[var(--orange-glow)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+                }`}>
+                <Settings2 size={22} /> Configurações
+              </Link>
             </div>
           </motion.aside>
         )}
       </AnimatePresence>
 
-      {/* Desktop sidebar — 68px icon bar com ícones maiores */}
+      {/* Desktop sidebar — 68px icon bar */}
       <aside
         className="hidden lg:flex flex-col fixed top-[56px] bottom-0 left-0 z-[40] w-[68px] glass border-r border-[var(--border-subtle)]"
         style={{ background: "var(--bg-deepest)" }}
       >
-        {/* Logo Allos */}
+        {/* Logo */}
         <div className="flex items-center justify-center py-4">
           <Link href="/" className="relative group">
             <Image
               src="/icon-allos.png"
-              alt="Allos"
+              alt="App"
               width={40}
               height={40}
               className="rounded-xl hover:scale-[1.08] hover:rotate-[-3deg] hover:brightness-110 transition-all duration-200 cursor-pointer"
               style={{ filter: "drop-shadow(0 0 8px rgba(43,158,139,.3))" }}
             />
-            {/* Tooltip */}
             <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-[var(--bg-card-elevated)] text-[var(--text-primary)] text-xs font-medium rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-200 z-50 shadow-[0_4px_12px_rgba(0,0,0,.15)] border border-[var(--border-default)] translate-x-1 group-hover:translate-x-0">
               Painel
             </span>
           </Link>
         </div>
 
-        {/* Nav icons — agora 24px */}
+        {/* Nav icons */}
         <nav className="flex flex-col items-center gap-1 flex-1 py-2 px-[10px]">
           {NAV.map((item) => {
             const active = isActive(item.href);
@@ -179,7 +160,6 @@ export default function Sidebar() {
                 }`}
                 title={item.label}
               >
-                {/* Active glow */}
                 {active && (
                   <motion.div
                     layoutId="sidebar-active"
@@ -190,7 +170,6 @@ export default function Sidebar() {
                 <span className="relative z-10">
                   <item.icon size={24} strokeWidth={active ? 2 : 1.5} />
                 </span>
-                {/* CSS-style tooltip */}
                 <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-[var(--bg-card-elevated)] text-[var(--text-primary)] text-xs font-medium rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-200 z-50 shadow-[0_4px_12px_rgba(0,0,0,.15)] border border-[var(--border-default)] translate-x-1 group-hover:translate-x-0">
                   {item.label}
                 </span>
@@ -201,35 +180,21 @@ export default function Sidebar() {
 
         {/* Bottom */}
         <div className="flex flex-col items-center gap-2 py-4 border-t border-[var(--border-subtle)]">
-          {isAdmin && (
-            <Link
-              href="/admin"
-              {...(isActive("/admin") ? { "aria-current": "page" as const } : {})}
-              className={`group relative w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-200 ${
-                isActive("/admin")
-                  ? "text-[var(--orange-500)] bg-[var(--orange-glow)]"
-                  : "text-[var(--text-tertiary)] hover:text-[var(--orange-500)] hover:bg-[rgba(200,75,49,.06)]"
-              }`}
-              title="Admin"
-            >
-              <Settings2 size={22} strokeWidth={isActive("/admin") ? 2 : 1.5} />
-              <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-[var(--bg-card-elevated)] text-[var(--text-primary)] text-xs font-medium rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-200 z-50 shadow-[0_4px_12px_rgba(0,0,0,.15)] border border-[var(--border-default)] translate-x-1 group-hover:translate-x-0">
-                Admin
-              </span>
-            </Link>
-          )}
-          <a
-            href={ALLOS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group relative w-12 h-12 rounded-xl flex items-center justify-center text-[var(--text-tertiary)] hover:text-[#2B9E8B] transition-colors"
-            title="Site Allos"
+          <Link
+            href="/configuracoes"
+            {...(isActive("/configuracoes") ? { "aria-current": "page" as const } : {})}
+            className={`group relative w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-200 ${
+              isActive("/configuracoes")
+                ? "text-[var(--orange-500)] bg-[var(--orange-glow)]"
+                : "text-[var(--text-tertiary)] hover:text-[var(--orange-500)] hover:bg-[rgba(200,75,49,.06)]"
+            }`}
+            title="Configurações"
           >
-            <ExternalLink size={18} />
+            <Settings2 size={22} strokeWidth={isActive("/configuracoes") ? 2 : 1.5} />
             <span className="absolute left-full ml-3 px-2.5 py-1.5 bg-[var(--bg-card-elevated)] text-[var(--text-primary)] text-xs font-medium rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-200 z-50 shadow-[0_4px_12px_rgba(0,0,0,.15)] border border-[var(--border-default)] translate-x-1 group-hover:translate-x-0">
-              Site Allos
+              Configurações
             </span>
-          </a>
+          </Link>
         </div>
       </aside>
     </>

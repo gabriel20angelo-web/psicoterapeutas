@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { User, Palette, MessageSquare, Clock, LayoutGrid, Shield, CheckCircle, XCircle } from "lucide-react";
+import { User, Palette, MessageSquare, Clock, LayoutGrid, FolderOpen } from "lucide-react";
 import Shell from "@/components/Shell";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
@@ -9,127 +9,14 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/contexts/ToastContext";
 import { getTemplates, updateTemplate, getSettings, updateSettings } from "@/lib/data";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/lib/supabase";
-import type { Profile } from "@/types/database";
-import { getModulosConfig, toggleModulo, resetOnboarding, type ModuloConfig } from "@/lib/modulos-config";
+import { getModulosConfig, toggleModulo, type ModuloConfig } from "@/lib/modulos-config";
 import { fadeUp, staggerChild } from "@/lib/animations";
 import type { TemplateMensagem } from "@/types/database";
 
 const VARS = ['{nome_paciente}', '{data_sessao}', '{horario_sessao}', '{nome_terapeuta}'];
 
-function AdminApprovalSection() {
-  const [users, setUsers] = useState<Profile[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(true);
-  const { toast } = useToast();
-
-  const fetchUsers = useCallback(async () => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .order("created_at", { ascending: false });
-    setUsers(data || []);
-    setLoadingUsers(false);
-  }, []);
-
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
-
-  const toggleApproval = async (userId: string, approved: boolean) => {
-    const { error } = await supabase
-      .from("profiles")
-      .update({ approved })
-      .eq("id", userId);
-    if (error) {
-      toast("Erro ao atualizar usuario", { type: "error" });
-    } else {
-      toast(approved ? "Usuario aprovado!" : "Acesso revogado", { type: "success" });
-      fetchUsers();
-    }
-  };
-
-  const pending = users.filter(u => !u.approved && u.role !== "admin");
-  const approved = users.filter(u => u.approved || u.role === "admin");
-
-  return (
-    <motion.div {...staggerChild(5)}>
-      <Card className="mb-5">
-        <div className="flex items-center gap-3 mb-4">
-          <Shield size={18} className="text-acc" />
-          <h2 className="font-fraunces font-bold text-lg text-ink">Gerenciar usuários</h2>
-        </div>
-
-        {loadingUsers ? (
-          <p className="font-dm text-sm text-ink-2">Carregando...</p>
-        ) : (
-          <>
-            {/* Pendentes */}
-            {pending.length > 0 && (
-              <div className="mb-6">
-                <h3 className="font-dm text-xs font-semibold text-[var(--orange-500)] uppercase tracking-wide mb-3">
-                  Aguardando aprovacao ({pending.length})
-                </h3>
-                <div className="space-y-2">
-                  {pending.map(u => (
-                    <div key={u.id} className="flex items-center justify-between p-3 rounded-xl bg-[var(--bg-input)] border border-[var(--orange-500)]/20">
-                      <div>
-                        <p className="font-dm text-sm font-medium text-[var(--text-primary)]">{u.full_name || "Sem nome"}</p>
-                        <p className="font-dm text-xs text-[var(--text-tertiary)]">{u.email}</p>
-                      </div>
-                      <button
-                        onClick={() => toggleApproval(u.id, true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors font-dm text-xs font-semibold"
-                      >
-                        <CheckCircle size={14} /> Aprovar
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Aprovados */}
-            <div>
-              <h3 className="font-dm text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wide mb-3">
-                Usuarios aprovados ({approved.length})
-              </h3>
-              <div className="space-y-2">
-                {approved.map(u => (
-                  <div key={u.id} className="flex items-center justify-between p-3 rounded-xl bg-[var(--bg-input)]">
-                    <div className="flex items-center gap-2">
-                      <div>
-                        <p className="font-dm text-sm font-medium text-[var(--text-primary)]">
-                          {u.full_name || "Sem nome"}
-                          {u.role === "admin" && (
-                            <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[var(--orange-500)]/10 text-[var(--orange-500)]">Admin</span>
-                          )}
-                        </p>
-                        <p className="font-dm text-xs text-[var(--text-tertiary)]">{u.email}</p>
-                      </div>
-                    </div>
-                    {u.role !== "admin" && (
-                      <button
-                        onClick={() => toggleApproval(u.id, false)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors font-dm text-xs font-semibold"
-                      >
-                        <XCircle size={14} /> Revogar
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {pending.length === 0 && approved.length === 0 && (
-              <p className="font-dm text-sm text-ink-2">Nenhum usuario cadastrado.</p>
-            )}
-          </>
-        )}
-      </Card>
-    </motion.div>
-  );
-}
-
 export default function ConfiguracoesPage() {
-  const { profile, isAdmin } = useAuth();
+  const { profile } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
   const [templates, setTemplates] = useState<TemplateMensagem[]>(getTemplates());
@@ -137,7 +24,6 @@ export default function ConfiguracoesPage() {
   const [editContent, setEditContent] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Work hours (#14)
   const [settings, setSettings] = useState(getSettings());
   const handleWorkHoursChange = (field: 'workHourStart' | 'workHourEnd', value: number) => {
     const updated = updateSettings({ [field]: value });
@@ -157,7 +43,6 @@ export default function ConfiguracoesPage() {
     const after = editContent.slice(end);
     const newContent = before + variable + after;
     setEditContent(newContent);
-    // Restore cursor position after the inserted variable
     requestAnimationFrame(() => {
       ta.focus();
       const cursorPos = start + variable.length;
@@ -179,7 +64,7 @@ export default function ConfiguracoesPage() {
         <h1 className="font-fraunces font-bold text-ink mb-1" style={{ fontSize: "clamp(24px, 4vw, 32px)" }}>
           Configurações
         </h1>
-        <p className="font-dm text-sm text-ink-2 mb-8">Preferências da conta e templates.</p>
+        <p className="font-dm text-sm text-ink-2 mb-8">Preferências e templates.</p>
       </motion.div>
 
       {/* Perfil */}
@@ -197,14 +82,6 @@ export default function ConfiguracoesPage() {
             <div>
               <p className="font-dm text-xs text-ink-2">E-mail</p>
               <p className="font-dm text-sm font-medium text-ink">{profile?.email}</p>
-            </div>
-            <div>
-              <p className="font-dm text-xs text-ink-2">CRP</p>
-              <p className="font-dm text-sm font-medium text-ink">{profile?.username}</p>
-            </div>
-            <div>
-              <p className="font-dm text-xs text-ink-2">Especialidades</p>
-              <p className="font-dm text-sm font-medium text-ink">{profile?.is_admin ? 'Administrador' : 'Terapeuta'}</p>
             </div>
           </div>
         </Card>
@@ -235,14 +112,14 @@ export default function ConfiguracoesPage() {
         </Card>
       </motion.div>
 
-      {/* Horário de trabalho (#14) */}
+      {/* Horário de trabalho */}
       <motion.div {...staggerChild(2)}>
         <Card className="mb-5">
           <div className="flex items-center gap-3 mb-4">
             <Clock size={18} className="text-acc" />
             <h2 className="font-fraunces font-bold text-lg text-ink">Horário de trabalho</h2>
           </div>
-          <p className="font-dm text-xs text-ink-2 mb-4">Define o intervalo visível no calendário. Horas fora do expediente ficam escurecidas.</p>
+          <p className="font-dm text-xs text-ink-2 mb-4">Define o intervalo visível no calendário.</p>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block font-dm text-sm font-medium text-ink mb-1.5">Início</label>
@@ -324,8 +201,9 @@ export default function ConfiguracoesPage() {
       {/* Módulos visíveis */}
       <ModulosSection />
 
-      {/* Admin: Gerenciar usuários */}
-      {isAdmin && <AdminApprovalSection />}
+      {/* Obsidian Vault */}
+      <ObsidianSection />
+
     </Shell>
   );
 }
@@ -346,13 +224,7 @@ function ModulosSection() {
     setModulos(updated);
     const mod = updated.find(m => m.id === id);
     toast(mod?.ativo ? `${mod.label} ativado` : `${mod?.label} ocultado`, { type: "success" });
-    // Reload sidebar after short delay
     setTimeout(() => window.location.reload(), 600);
-  };
-
-  const handleResetOnboarding = () => {
-    resetOnboarding();
-    toast("Assistente de configuração será exibido no próximo acesso", { type: "info" });
   };
 
   if (!mounted) return null;
@@ -362,16 +234,15 @@ function ModulosSection() {
 
   return (
     <motion.div {...staggerChild(4)}>
-      <Card>
+      <Card className="mb-5">
         <div className="flex items-center gap-3 mb-1">
           <LayoutGrid size={18} style={{ color: "var(--orange-500)" }} />
           <h2 className="font-fraunces font-bold text-lg" style={{ color: "var(--text-primary)" }}>Módulos visíveis</h2>
         </div>
         <p className="font-dm text-xs mb-5" style={{ color: "var(--text-secondary)" }}>
-          Escolha quais ferramentas ficam visíveis na barra lateral. Módulos ocultos continuam existindo e podem ser reativados a qualquer momento.
+          Escolha quais ferramentas ficam visíveis na barra lateral.
         </p>
 
-        {/* Fixed modules */}
         <p className="font-dm text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-tertiary)" }}>Sempre visíveis</p>
         <div className="flex gap-2 flex-wrap mb-5">
           {fixos.map(m => (
@@ -381,7 +252,6 @@ function ModulosSection() {
           ))}
         </div>
 
-        {/* Optional modules */}
         <p className="font-dm text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--text-tertiary)" }}>Ferramentas opcionais</p>
         <div className="space-y-2">
           {opcionais.map(m => (
@@ -407,17 +277,59 @@ function ModulosSection() {
             </div>
           ))}
         </div>
+      </Card>
+    </motion.div>
+  );
+}
 
-        {/* Reset onboarding */}
-        <div className="mt-5 pt-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-          <button
-            onClick={handleResetOnboarding}
-            className="font-dm text-xs hover:underline"
-            style={{ color: "var(--text-tertiary)" }}
-          >
-            Reexibir assistente de configuração inicial
-          </button>
+// ─── Obsidian Section ───
+function ObsidianSection() {
+  const { toast } = useToast();
+  const [vaultPath, setVaultPath] = useState<string>('');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      window.electronAPI.vault.getPath().then(setVaultPath);
+    }
+  }, []);
+
+  const handleSelectFolder = async () => {
+    if (!window.electronAPI) {
+      toast('Disponível apenas no app desktop', { type: 'info' });
+      return;
+    }
+    const selected = await window.electronAPI.vault.selectFolder();
+    if (selected) {
+      setVaultPath(selected);
+      toast('Vault do Obsidian atualizado', { type: 'success' });
+    }
+  };
+
+  if (!mounted) return null;
+
+  return (
+    <motion.div {...staggerChild(5)}>
+      <Card className="mb-5">
+        <div className="flex items-center gap-3 mb-4">
+          <FolderOpen size={18} style={{ color: "var(--orange-500)" }} />
+          <h2 className="font-fraunces font-bold text-lg" style={{ color: "var(--text-primary)" }}>Obsidian</h2>
         </div>
+        <p className="font-dm text-xs mb-4" style={{ color: "var(--text-secondary)" }}>
+          Notas de sessão, pré-sessão e canvas são sincronizados com o vault do Obsidian. Edite em qualquer lugar.
+        </p>
+        <div className="p-3 rounded-xl mb-4" style={{ background: "var(--bg-input)", border: "1px solid var(--border-default)" }}>
+          <p className="font-dm text-xs" style={{ color: "var(--text-tertiary)" }}>Vault path</p>
+          <p className="font-mono text-sm" style={{ color: "var(--text-primary)" }}>{vaultPath || 'Não configurado'}</p>
+        </div>
+        <button
+          onClick={handleSelectFolder}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-dm text-sm font-medium transition-colors"
+          style={{ background: "var(--orange-500)", color: "white" }}
+        >
+          <FolderOpen size={16} /> Selecionar pasta do vault
+        </button>
       </Card>
     </motion.div>
   );

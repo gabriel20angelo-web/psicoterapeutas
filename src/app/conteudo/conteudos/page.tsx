@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -78,7 +78,11 @@ const INITIAL_FORM: CreateForm = {
 // ═══════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════
-export default function ConteudosPage() {
+export default function ConteudosPageWrapper() {
+  return <Suspense><ConteudosPageInner /></Suspense>;
+}
+
+function ConteudosPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();

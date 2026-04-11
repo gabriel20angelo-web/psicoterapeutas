@@ -5,8 +5,9 @@ import Link from "next/link";
 import {
   Sparkles, Plus, Trash2, ArrowRight, Check, ChevronDown,
   Send, Pencil, X, Target, AlertTriangle, CalendarDays,
-  CheckCircle, Clock, ArrowUpRight, HelpCircle,
+  CheckCircle, Clock, ArrowUpRight, HelpCircle, BookOpen,
 } from "lucide-react";
+import { getConteudos as getAcConteudos, getBibliotecaEmLeitura, getDisciplinasCursando } from "@/lib/academico-data";
 import Shell from "@/components/Shell";
 import UsinaNav from "@/components/usina/UsinaNav";
 import Card from "@/components/ui/Card";
@@ -653,6 +654,143 @@ export default function UsinaDashboard() {
         </motion.section>
 
         </div>{/* end Row 2 grid */}
+
+        {/* ═══ Section F — Inspirações Acadêmicas ═══ */}
+        <motion.section {...fadeUp(0.3)}>
+          <div className="flex items-center gap-2 mb-4">
+            <span style={{ color: "#10b981" }}>🎓</span>
+            <h2 className="font-fraunces text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+              Inspirações Acadêmicas
+            </h2>
+            <HelpTip text="Conteúdos que você estudou recentemente e livros que está lendo. Use como inspiração para criar posts, artigos ou reflexões na Usina." />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Recent study content */}
+            <Card className="!p-4">
+              <h3 className="font-dm text-sm font-semibold text-[var(--text-secondary)] mb-3 flex items-center gap-2">
+                <BookOpen size={14} style={{ color: "#10b981" }} />
+                Últimos conteúdos estudados
+              </h3>
+              {(() => {
+                const conteudosAcademicos = getAcConteudos()
+                  .filter(c => c.resumo_html || c.titulo)
+                  .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+                  .slice(0, 5);
+
+                if (conteudosAcademicos.length === 0) {
+                  return <p className="font-dm text-xs text-center py-4" style={{ color: "var(--text-tertiary)" }}>Nenhum conteúdo acadêmico ainda</p>;
+                }
+
+                const disciplinas = getDisciplinasCursando();
+                const getDisciplinaNome = (id: string) => disciplinas.find(d => d.id === id)?.nome || "";
+
+                return (
+                  <div className="space-y-2">
+                    {conteudosAcademicos.map(c => (
+                      <div
+                        key={c.id}
+                        className="flex items-start gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-[var(--bg-hover)] group"
+                      >
+                        <div className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: "#10b981" }} />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-dm text-xs font-medium text-[var(--text-primary)] line-clamp-1">{c.titulo}</p>
+                          <p className="font-dm text-[10px] text-[var(--text-tertiary)]">
+                            {getDisciplinaNome(c.disciplina_id)}{c.data_aula ? ` · ${new Date(c.data_aula + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 flex-shrink-0">
+                          <button
+                            onClick={() => setRascunhoInput(c.titulo)}
+                            className="p-1 rounded hover:bg-[var(--bg-card-elevated)] transition-colors"
+                            title="Usar como rascunho"
+                          >
+                            <Pencil size={11} className="text-[var(--text-tertiary)]" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              const disc = getDisciplinaNome(c.disciplina_id);
+                              const conteudo = createConteudo({
+                                titulo: c.titulo,
+                                descricao: disc ? `Baseado em aula de ${disc}` : '',
+                                status: "caixa_de_ideias",
+                              });
+                              refresh();
+                              toast("Conteúdo criado na Usina", { type: "success" });
+                            }}
+                            className="p-1 rounded hover:bg-[var(--bg-card-elevated)] transition-colors"
+                            title="Criar conteúdo direto na Usina"
+                          >
+                            <ArrowUpRight size={11} style={{ color: "var(--orange-500)" }} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </Card>
+
+            {/* Books being read */}
+            <Card className="!p-4">
+              <h3 className="font-dm text-sm font-semibold text-[var(--text-secondary)] mb-3 flex items-center gap-2">
+                <span>📚</span>
+                Lendo agora
+              </h3>
+              {(() => {
+                const livros = getBibliotecaEmLeitura();
+
+                if (livros.length === 0) {
+                  return <p className="font-dm text-xs text-center py-4" style={{ color: "var(--text-tertiary)" }}>Nenhum livro em leitura</p>;
+                }
+
+                return (
+                  <div className="space-y-2">
+                    {livros.slice(0, 5).map(livro => (
+                      <div
+                        key={livro.id}
+                        className="flex items-start gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-[var(--bg-hover)] group"
+                      >
+                        <div className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: "#8B5CF6" }} />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-dm text-xs font-medium text-[var(--text-primary)] line-clamp-1">{livro.titulo}</p>
+                          <p className="font-dm text-[10px] text-[var(--text-tertiary)]">
+                            {livro.autores}{livro.andamento ? ` · ${livro.andamento}` : ''}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 flex-shrink-0">
+                          <button
+                            onClick={() => setRascunhoInput(`Insights do livro: ${livro.titulo}`)}
+                            className="p-1 rounded hover:bg-[var(--bg-card-elevated)] transition-colors"
+                            title="Usar como rascunho"
+                          >
+                            <Pencil size={11} className="text-[var(--text-tertiary)]" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              createConteudo({
+                                titulo: `Insights: ${livro.titulo}`,
+                                descricao: `Baseado no livro "${livro.titulo}" de ${livro.autores}`,
+                                status: "caixa_de_ideias",
+                              });
+                              refresh();
+                              toast("Conteúdo criado na Usina", { type: "success" });
+                            }}
+                            className="p-1 rounded hover:bg-[var(--bg-card-elevated)] transition-colors"
+                            title="Criar conteúdo direto na Usina"
+                          >
+                            <ArrowUpRight size={11} style={{ color: "var(--orange-500)" }} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </Card>
+          </div>
+        </motion.section>
+
       </div>
 
       {/* Modal: Promover Rascunho */}

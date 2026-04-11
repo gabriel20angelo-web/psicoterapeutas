@@ -28,11 +28,11 @@ interface Props {
 
 export default function BlogPostCard({ post, index, onDeleted }: Props) {
   const initials = post.autor_nome.split(" ").map(n => n[0]).slice(0, 2).join("");
-  const { user } = useAuth();
+  const { profile } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const isOwner = post.autor_id === user?.id;
+  const isOwner = post.autor_id === profile?.id;
   const isDraft = post.status === "rascunho";
   const tags = getAllBlogTags();
 

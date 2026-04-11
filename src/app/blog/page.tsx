@@ -33,8 +33,8 @@ export default function BlogPage() {
       {/* Header */}
       <motion.div {...staggerChild(0)} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="font-fraunces font-bold text-2xl text-[var(--text-primary)]">Blog da Comunidade</h1>
-          <p className="font-dm text-sm text-[var(--text-secondary)] mt-1">Compartilhe conhecimento com a equipe</p>
+          <h1 className="font-fraunces font-bold text-2xl text-[var(--text-primary)]">Blog</h1>
+          <p className="font-dm text-sm text-[var(--text-secondary)] mt-1">Seus artigos e reflexões</p>
         </div>
         <Link href="/blog/novo">
           <Button icon={<Plus size={16} />}>Novo Artigo</Button>

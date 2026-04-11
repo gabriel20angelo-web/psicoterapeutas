@@ -1,4 +1,4 @@
-import type { StatusAtividade, TipoAtividade, CategoriaComunidade } from '@/types/database';
+import type { StatusAtividade, TipoAtividade } from '@/types/database';
 
 export const STATUS_COLORS: Record<StatusAtividade, { bg: string; text: string; label: string; dot: string }> = {
   pendente:   { bg: 'bg-amber-100 dark:bg-amber-900/30 border-amber-200 dark:border-amber-800/40', text: 'text-amber-700 dark:text-amber-400', label: 'Pendente', dot: 'bg-amber-500' },
@@ -24,14 +24,6 @@ export const STATUS_CALENDAR_ACCENT: Record<StatusAtividade, string> = {
   realizada: 'opacity-60',
   cancelada: 'opacity-40 line-through',
   ausencia: 'opacity-40 ring-2 ring-rose-400/50',
-};
-
-export const CATEGORIA_COMUNIDADE_COLORS: Record<CategoriaComunidade, { bg: string; text: string; label: string; dot: string }> = {
-  formacao_allos: { bg: 'bg-[var(--green-bg)] border-[var(--green-border)]', text: 'text-[var(--green-text)]', label: 'Formação Allos', dot: 'bg-orange-500' },
-  grupo_estudos:  { bg: 'bg-blue-100 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800/40', text: 'text-blue-700 dark:text-blue-400', label: 'Grupo de Estudos', dot: 'bg-blue-500' },
-  intervisao:     { bg: 'bg-purple-100 dark:bg-purple-900/30 border-purple-200 dark:border-purple-800/40', text: 'text-purple-700 dark:text-purple-400', label: 'Intervisão', dot: 'bg-purple-500' },
-  evento_externo: { bg: 'bg-orange-100 dark:bg-orange-900/30 border-orange-200 dark:border-orange-800/40', text: 'text-orange-700 dark:text-orange-400', label: 'Evento Externo', dot: 'bg-orange-500' },
-  outro:          { bg: 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700', text: 'text-gray-600 dark:text-gray-400', label: 'Outro', dot: 'bg-gray-400' },
 };
 
 export const STATUS_PACIENTE_COLORS: Record<string, { bg: string; text: string; label: string }> = {

@@ -5,16 +5,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 import BackgroundEffects from "./BackgroundEffects";
-import OnboardingModal from "./OnboardingModal";
-import { useAuth, forceLogout } from "@/contexts/AuthContext";
-import { setComunicacaoUser } from "@/lib/comunicacao-data";
 import { initializeData, isDataReady } from "@/lib/data";
+
+const FIXED_USER_ID = process.env.NEXT_PUBLIC_USER_ID || "00000000-0000-0000-0000-000000000001";
 
 const SHORTCUTS = [
   { key: "n", label: "Nova atividade / Agenda", route: "/agenda" },
   { key: "t", label: "Agenda (hoje)", route: "/agenda" },
   { key: "p", label: "Pacientes", route: "/pacientes" },
-  { key: "e", label: "Equipe", route: "/comunicacao" },
   { key: "?", label: "Mostrar atalhos", route: null },
 ];
 
@@ -69,26 +67,16 @@ function ShortcutsHelpModal({ open, onClose }: { open: boolean; onClose: () => v
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { user, profile, loading, profileReady, isApproved } = useAuth();
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [dataReady, setDataReady] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login");
-  }, [user, loading, router]);
-
-  useEffect(() => {
-    if (profile) {
-      setComunicacaoUser(profile.id, profile.full_name);
-      initializeData(profile.id).then(() => setDataReady(true)).catch(() => setDataReady(true));
-    }
-  }, [profile]);
+    initializeData(FIXED_USER_ID).then(() => setDataReady(true)).catch(() => setDataReady(true));
+  }, []);
 
   const handleGlobalKeydown = useCallback(
     (e: KeyboardEvent) => {
-      // Block all shortcuts when a modal/dialog is open
       if (document.querySelector("[role='dialog']")) return;
-
       const el = document.activeElement;
       const tag = el?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
@@ -97,7 +85,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       switch (e.key) {
         case "n": case "t": e.preventDefault(); router.push("/agenda"); break;
         case "p": e.preventDefault(); router.push("/pacientes"); break;
-        case "e": e.preventDefault(); router.push("/comunicacao"); break;
         case "?": e.preventDefault(); setShowShortcuts(true); break;
       }
     },
@@ -109,49 +96,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("keydown", handleGlobalKeydown);
   }, [handleGlobalKeydown]);
 
-  // Loading auth, profile check, or data initialization
-  if (loading || (user && !profileReady) || (user && profileReady && isApproved && !dataReady)) {
+  if (!dataReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--bg-page)]">
         <div className="w-6 h-6 border-2 border-[var(--orange-500)] border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  // Not logged in
-  if (!user) return null;
-
-  // Awaiting approval (only show AFTER DB check completed)
-  if (profileReady && !isApproved) {
-    return (
-      <div className="min-h-screen bg-[var(--bg-page)] relative">
-        <BackgroundEffects />
-        <div className="min-h-screen flex items-center justify-center px-4">
-          <div className="w-full max-w-[420px] relative z-10">
-            <div className="text-center mb-8">
-              <h1 className="font-fraunces font-bold text-3xl text-[var(--text-primary)]">
-                Allos <span className="text-[var(--orange-500)]">Terapeutas</span>
-              </h1>
-            </div>
-            <div className="card-base p-8 text-center">
-              <div className="w-16 h-16 rounded-full bg-[var(--orange-500)]/10 flex items-center justify-center mx-auto mb-5">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--orange-500)]"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              </div>
-              <h2 className="font-fraunces font-bold text-xl text-[var(--text-primary)] mb-3">Aguardando aprovação</h2>
-              <p className="font-dm text-sm text-[var(--text-secondary)] mb-2">Sua conta foi criada com sucesso!</p>
-              <p className="font-dm text-sm text-[var(--text-tertiary)] mb-6">
-                Um administrador precisa aprovar seu acesso antes de você poder usar o painel. Você será notificado quando sua conta for aprovada.
-              </p>
-              <div className="px-4 py-3 rounded-xl bg-[var(--bg-input)] border border-[var(--border-default)] mb-6">
-                <p className="font-dm text-xs text-[var(--text-tertiary)]">Conectado como</p>
-                <p className="font-dm text-sm font-medium text-[var(--text-primary)]">{profile?.full_name || user?.email}</p>
-              </div>
-              <button onClick={forceLogout} className="font-dm text-sm text-[var(--orange-500)] hover:underline">
-                Sair e usar outra conta
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     );
   }
@@ -169,7 +117,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </main>
       <ShortcutsHelpModal open={showShortcuts} onClose={() => setShowShortcuts(false)} />
-      <OnboardingModal />
     </div>
   );
 }

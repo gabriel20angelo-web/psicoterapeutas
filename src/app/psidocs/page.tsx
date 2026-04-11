@@ -429,13 +429,13 @@ export default function PsiDocsPage() {
                   variant="secondary"
                   size="sm"
                   disabled={!selectedPacienteId}
-                  onClick={() => {
+                  onClick={async () => {
                     if (!selectedPacienteId || !selectedDoc) return;
                     const pacientes = getPacientes();
                     const pac = pacientes.find(p => p.id === selectedPacienteId);
-                    const currentNote = loadGeneralNote(selectedPacienteId);
+                    const currentNote = await loadGeneralNote(selectedPacienteId);
                     const docRef = `\n\n--- Documento gerado em ${format(new Date(), "dd/MM/yyyy")} ---\nTipo: ${selectedDoc.title}\n${generateText().slice(0, 200)}...`;
-                    saveGeneralNote(selectedPacienteId, currentNote + docRef);
+                    await saveGeneralNote(selectedPacienteId, currentNote + docRef);
                     toast(`Documento vinculado ao prontuário de ${pac?.nome || "paciente"}`, { type: "success" });
                     setSelectedPacienteId("");
                   }}
