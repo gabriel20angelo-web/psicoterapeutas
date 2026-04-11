@@ -792,6 +792,7 @@ import {
   getTarefasLivrosComPrazo,
   updateBibliotecaItem,
   getBibliotecaItem,
+  getBibliotecaEmLeitura,
 } from "./academico-data";
 
 // Pasta virtual da Usina
@@ -1086,10 +1087,106 @@ export function getAtividadesAcademico(): Atividade[] {
     updated_at: t.created_at,
   }));
 
-  return [...tarefaAtividades, ...conteudoAtividades, ...livroTarefas];
+  // Livros em leitura como atividades (para pomodoro/tracking)
+  const livrosEmLeitura = getBibliotecaEmLeitura();
+  const livroAtividades: Atividade[] = livrosEmLeitura.map((livro, i) => ({
+    id: `academico-bk-${livro.id}`,
+    projeto_id: `academico-biblioteca`,
+    atividade_pai_id: null,
+    titulo: `📖 ${livro.titulo}`,
+    descricao: livro.autores ? `${livro.autores}` : "",
+    notas: "",
+    prioridade: "media" as const,
+    data_limite: null,
+    lembrete: null,
+    recorrencia: null,
+    pomodoros_estimados: 4,
+    pomodoros_realizados: livro.pomodoros_realizados || 0,
+    tempo_total_seg: livro.tempo_total_seg || 0,
+    status: "pendente" as const,
+    concluida_em: null,
+    etiqueta_ids: [],
+    ordem: i,
+    created_at: livro.created_at,
+    updated_at: livro.updated_at,
+  }));
+
+  // Capítulos individuais como sub-atividades
+  const capituloAtividades: Atividade[] = [];
+  for (const livro of livrosEmLeitura) {
+    const concluidos = ["lido_rapido", "lido", "lido_resumido", "lido_resumido_mapa"];
+    for (const cap of livro.capitulos || []) {
+      if (concluidos.includes(cap.status_leitura)) continue; // skip done chapters
+      capituloAtividades.push({
+        id: `academico-bc-${livro.id}-${cap.id}`,
+        projeto_id: `academico-biblioteca`,
+        atividade_pai_id: `academico-bk-${livro.id}`,
+        titulo: `📄 ${cap.titulo || `Cap. ${cap.ordem + 1}`} — ${livro.titulo}`,
+        descricao: cap.pagina_inicio ? `pág. ${cap.pagina_inicio}–${cap.pagina_fim || "?"}` : "",
+        notas: "",
+        prioridade: "baixa" as const,
+        data_limite: null,
+        lembrete: null,
+        recorrencia: null,
+        pomodoros_estimados: 2,
+        pomodoros_realizados: cap.pomodoros_realizados || 0,
+        tempo_total_seg: cap.tempo_total_seg || 0,
+        status: "pendente" as const,
+        concluida_em: null,
+        etiqueta_ids: [],
+        ordem: cap.ordem,
+        created_at: livro.created_at,
+        updated_at: livro.updated_at,
+      });
+    }
+  }
+
+  return [...tarefaAtividades, ...conteudoAtividades, ...livroTarefas, ...livroAtividades, ...capituloAtividades];
 }
 
 // Verifica se atividade é do Acadêmico
 export function isAcademicoAtividade(id: string): boolean {
-  return id.startsWith("academico-t-") || id.startsWith("academico-co-") || id.startsWith("academico-bl-");
+  return id.startsWith("academico-t-") || id.startsWith("academico-co-") || id.startsWith("academico-bl-") || id.startsWith("academico-bk-") || id.startsWith("academico-bc-");
+}
+
+/**
+ * Register a pomodoro completion for a book or chapter.
+ * Called from the timer when a pomodoro finishes on a book/chapter activity.
+ */
+export function registrarPomodoroLivro(activityId: string, duracaoSeg: number): void {
+  if (activityId.startsWith("academico-bk-")) {
+    // Book-level pomodoro
+    const livroId = activityId.replace("academico-bk-", "");
+    const livro = getBibliotecaItem(livroId);
+    if (livro) {
+      updateBibliotecaItem(livroId, {
+        pomodoros_realizados: (livro.pomodoros_realizados || 0) + 1,
+        tempo_total_seg: (livro.tempo_total_seg || 0) + duracaoSeg,
+      });
+    }
+  } else if (activityId.startsWith("academico-bc-")) {
+    // Chapter-level pomodoro: academico-bc-{livroId}-{capId}
+    const rest = activityId.replace("academico-bc-", "");
+    // capId format: cap-{timestamp}-{random}, livroId format: bi-{timestamp}-{random}
+    // Split strategy: find the livro, then match cap
+    const livros = getBibliotecaEmLeitura();
+    for (const livro of livros) {
+      for (const cap of livro.capitulos || []) {
+        if (rest === `${livro.id}-${cap.id}`) {
+          const caps = livro.capitulos.map(c =>
+            c.id === cap.id
+              ? { ...c, pomodoros_realizados: (c.pomodoros_realizados || 0) + 1, tempo_total_seg: (c.tempo_total_seg || 0) + duracaoSeg }
+              : c
+          );
+          // Also add to book total
+          updateBibliotecaItem(livro.id, {
+            capitulos: caps,
+            pomodoros_realizados: (livro.pomodoros_realizados || 0) + 1,
+            tempo_total_seg: (livro.tempo_total_seg || 0) + duracaoSeg,
+          });
+          return;
+        }
+      }
+    }
+  }
 }

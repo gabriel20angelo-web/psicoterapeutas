@@ -133,6 +133,8 @@ export default function BibliotecaPage() {
       capa_base64: form.capa_base64 || "",
       capitulos,
       tarefas_livro: tarefas,
+      pomodoros_realizados: editing?.pomodoros_realizados || 0,
+      tempo_total_seg: editing?.tempo_total_seg || 0,
     };
     if (editing) {
       updateBibliotecaItem(editing.id, data);
@@ -151,6 +153,7 @@ export default function BibliotecaPage() {
     setCapitulos(prev => [...prev, {
       id: `cap-${uid()}`, titulo: "", pagina_inicio: null, pagina_fim: null,
       status_leitura: bookStatus, herda_status: true, anotacoes: "", ordem: prev.length,
+      pomodoros_realizados: 0, tempo_total_seg: 0,
     }]);
   };
 
@@ -402,9 +405,9 @@ export default function BibliotecaPage() {
                         <Badge bg="var(--bg-hover)" text="var(--text-tertiary)" label={LABEL_FORMATO_LEITURA[b.formato]} />
                         {b.andamento && <span className="font-dm text-[10px] text-[var(--orange-500)]">{b.andamento}</span>}
                       </div>
-                      {/* Capítulos + Tarefas indicators */}
-                      {(capProg || pendingTasks > 0) && (
-                        <div className="flex items-center gap-3 mt-2">
+                      {/* Capítulos + Tarefas + Tempo indicators */}
+                      {(capProg || pendingTasks > 0 || b.tempo_total_seg > 0) && (
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
                           {capProg && (
                             <div className="flex items-center gap-1.5">
                               <div className="w-16 h-1.5 rounded-full bg-[var(--bg-hover)] overflow-hidden">
@@ -412,6 +415,16 @@ export default function BibliotecaPage() {
                               </div>
                               <span className="font-mono text-[10px] text-[var(--text-tertiary)]">{capProg.done}/{capProg.total}</span>
                             </div>
+                          )}
+                          {b.tempo_total_seg > 0 && (
+                            <span className="font-mono text-[10px] text-[#3b82f6] flex items-center gap-0.5">
+                              <Clock size={10} /> {Math.floor(b.tempo_total_seg / 3600)}h{Math.floor((b.tempo_total_seg % 3600) / 60).toString().padStart(2, "0")}m
+                            </span>
+                          )}
+                          {b.pomodoros_realizados > 0 && (
+                            <span className="font-mono text-[10px] text-[var(--orange-500)]">
+                              {b.pomodoros_realizados} 🍅
+                            </span>
                           )}
                           {pendingTasks > 0 && (
                             <span className="font-dm text-[10px] text-[var(--orange-500)] flex items-center gap-0.5">

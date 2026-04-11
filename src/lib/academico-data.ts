@@ -306,11 +306,15 @@ export function getBiblioteca(): BibliotecaItem[] {
     ...b,
     status: migrateStatus(b.status) as any,
     disciplina_id: (b as any).disciplina_id || "",
+    pomodoros_realizados: (b as any).pomodoros_realizados || 0,
+    tempo_total_seg: (b as any).tempo_total_seg || 0,
     capitulos: (b.capitulos || []).map((c: any, i: number) => ({
       ...c,
       status_leitura: migrateStatus(c.status_leitura || (c.lido ? "lido" : "para_ler")),
       herda_status: c.herda_status ?? true,
       ordem: c.ordem ?? i,
+      pomodoros_realizados: c.pomodoros_realizados || 0,
+      tempo_total_seg: c.tempo_total_seg || 0,
     })),
     tarefas_livro: (b.tarefas_livro || []).map((t: any) => ({
       ...t,

@@ -20,6 +20,7 @@ import {
   createSessao,
   getConfigTimer,
   formatTempo,
+  registrarPomodoroLivro,
 } from "@/lib/forja-data";
 import type { Atividade, ConfigTimer } from "@/lib/forja-data";
 
@@ -220,6 +221,11 @@ function FocoPageInner() {
         iniciada_em: startTimeRef.current.toISOString(),
         finalizada_em: now.toISOString(),
       });
+
+      // Track pomodoro time on book/chapter
+      if (didComplete && selectedAtividadeId && (selectedAtividadeId.startsWith("academico-bk-") || selectedAtividadeId.startsWith("academico-bc-"))) {
+        registrarPomodoroLivro(selectedAtividadeId, actualSecondsRef.current);
+      }
 
       toast(
         didComplete

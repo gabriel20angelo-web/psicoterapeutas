@@ -182,6 +182,8 @@ export interface CapituloLivro {
   herda_status: boolean; // true = herda do livro
   anotacoes: string;
   ordem: number;
+  pomodoros_realizados: number;
+  tempo_total_seg: number;
 }
 
 export type StatusTarefaLivro = "pendente" | "em_andamento" | "concluida";
@@ -228,6 +230,8 @@ export interface BibliotecaItem {
   capa_base64: string; // data URL da capa do livro (vertical)
   capitulos: CapituloLivro[];
   tarefas_livro: TarefaLivro[];
+  pomodoros_realizados: number;
+  tempo_total_seg: number;
   created_at: string;
   updated_at: string;
 }
