@@ -290,12 +290,26 @@ export function calcularFrequencia(disciplinaId: string): FrequenciaResumo {
 // BIBLIOTECA
 // ═══════════════════════════════════════════════════
 
+// Migrate old StatusLeitura to StatusLeituraFull
+function migrateStatus(s: string): string {
+  const map: Record<string, string> = {
+    em_progresso: "lendo",
+    nao_lido: "para_ler",
+    lido_dinamico: "lido_rapido",
+    lido_resumido: "lido_resumido",
+  };
+  return map[s] || s;
+}
+
 export function getBiblioteca(): BibliotecaItem[] {
   return load<BibliotecaItem>(KEYS.biblioteca, []).map(b => ({
     ...b,
+    status: migrateStatus(b.status) as any,
+    disciplina_id: (b as any).disciplina_id || "",
     capitulos: (b.capitulos || []).map((c: any, i: number) => ({
       ...c,
-      status_leitura: c.status_leitura || (c.lido ? "lido" : "nao_lido"),
+      status_leitura: migrateStatus(c.status_leitura || (c.lido ? "lido" : "para_ler")),
+      herda_status: c.herda_status ?? true,
       ordem: c.ordem ?? i,
     })),
     tarefas_livro: (b.tarefas_livro || []).map((t: any) => ({
@@ -310,11 +324,13 @@ export function getBibliotecaItem(id: string): BibliotecaItem | undefined {
 }
 
 export function getBibliotecaEmLeitura(): BibliotecaItem[] {
-  return getBiblioteca().filter(b => b.status === "em_progresso");
+  const emProgresso = ["lendo_rapido", "lendo", "lendo_resumindo", "lendo_resumindo_mapa"];
+  return getBiblioteca().filter(b => emProgresso.includes(b.status));
 }
 
 export function getBibliotecaPorAno(ano: number): BibliotecaItem[] {
-  return getBiblioteca().filter(b => b.ano_leitura === ano && b.status === "lido");
+  const concluidos = ["lido_rapido", "lido", "lido_resumido", "lido_resumido_mapa"];
+  return getBiblioteca().filter(b => b.ano_leitura === ano && concluidos.includes(b.status));
 }
 
 export function getProgressoLeitura(ano: number): { lidos: number; meta: number; percentual: number } {
@@ -343,6 +359,19 @@ export function updateBibliotecaItem(id: string, data: Partial<BibliotecaItem>):
 
 export function deleteBibliotecaItem(id: string): void {
   save(KEYS.biblioteca, getBiblioteca().filter(b => b.id !== id));
+}
+
+/** Get all book tasks with deadlines (for Forja/Agenda integration) */
+export function getTarefasLivrosComPrazo(): { tarefa: import("@/types/academico").TarefaLivro; livro: BibliotecaItem }[] {
+  const result: { tarefa: import("@/types/academico").TarefaLivro; livro: BibliotecaItem }[] = [];
+  for (const livro of getBiblioteca()) {
+    for (const t of livro.tarefas_livro || []) {
+      if (t.prazo && t.status !== "concluida") {
+        result.push({ tarefa: t, livro });
+      }
+    }
+  }
+  return result;
 }
 
 // ═══════════════════════════════════════════════════

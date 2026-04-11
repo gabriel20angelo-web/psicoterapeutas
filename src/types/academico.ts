@@ -109,13 +109,68 @@ export interface Frequencia {
   created_at: string;
 }
 
-export type StatusLeituraCapitulo = "nao_lido" | "lido_dinamico" | "lido" | "lido_resumido";
+// ─── SISTEMA DE STATUS DE LEITURA (livro + capítulos) ───
 
-export const LABEL_STATUS_LEITURA_CAPITULO: Record<StatusLeituraCapitulo, string> = {
-  nao_lido: "Não lido",
-  lido_dinamico: "Lido dinamicamente",
+export type StatusLeituraFull =
+  // Fila
+  | "quero_ler"
+  // Para fazer (intenção definida)
+  | "para_ler"
+  | "para_ler_resumir"
+  | "para_ler_resumir_mapa"
+  // Em progresso
+  | "lendo_rapido"
+  | "lendo"
+  | "lendo_resumindo"
+  | "lendo_resumindo_mapa"
+  // Concluído
+  | "lido_rapido"
+  | "lido"
+  | "lido_resumido"
+  | "lido_resumido_mapa"
+  // Abandonado
+  | "abandonado";
+
+export const LABEL_STATUS_LEITURA_FULL: Record<StatusLeituraFull, string> = {
+  quero_ler: "Quero ler",
+  para_ler: "Para ler",
+  para_ler_resumir: "Para ler e resumir",
+  para_ler_resumir_mapa: "Para ler, resumir e produzir mapa",
+  lendo_rapido: "Lendo rapidamente",
+  lendo: "Lendo",
+  lendo_resumindo: "Lendo e resumindo",
+  lendo_resumindo_mapa: "Lendo, resumindo e produzindo mapa",
+  lido_rapido: "Lido rapidamente",
   lido: "Lido",
   lido_resumido: "Lido e resumido",
+  lido_resumido_mapa: "Lido, resumido e mapa produzido",
+  abandonado: "Abandonado",
+};
+
+export type GrupoStatusLeitura = "fila" | "para_fazer" | "em_progresso" | "concluido" | "abandonado";
+
+export const STATUS_LEITURA_GRUPO: Record<StatusLeituraFull, GrupoStatusLeitura> = {
+  quero_ler: "fila",
+  para_ler: "para_fazer",
+  para_ler_resumir: "para_fazer",
+  para_ler_resumir_mapa: "para_fazer",
+  lendo_rapido: "em_progresso",
+  lendo: "em_progresso",
+  lendo_resumindo: "em_progresso",
+  lendo_resumindo_mapa: "em_progresso",
+  lido_rapido: "concluido",
+  lido: "concluido",
+  lido_resumido: "concluido",
+  lido_resumido_mapa: "concluido",
+  abandonado: "abandonado",
+};
+
+export const LABEL_GRUPO_STATUS: Record<GrupoStatusLeitura, string> = {
+  fila: "Fila",
+  para_fazer: "Para fazer",
+  em_progresso: "Em progresso",
+  concluido: "Concluído",
+  abandonado: "Abandonado",
 };
 
 export interface CapituloLivro {
@@ -123,7 +178,8 @@ export interface CapituloLivro {
   titulo: string;
   pagina_inicio: number | null;
   pagina_fim: number | null;
-  status_leitura: StatusLeituraCapitulo;
+  status_leitura: StatusLeituraFull;
+  herda_status: boolean; // true = herda do livro
   anotacoes: string;
   ordem: number;
 }
@@ -157,7 +213,8 @@ export interface BibliotecaItem {
   autores: string;
   genero: string;
   formato: FormatoLeitura;
-  status: StatusLeitura;
+  status: StatusLeituraFull;
+  disciplina_id: string; // link to Disciplina (optional)
   data_inicio: string;
   data_fim: string;
   num_paginas: number | null;

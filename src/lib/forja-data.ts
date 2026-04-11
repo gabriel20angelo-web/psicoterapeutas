@@ -789,6 +789,9 @@ import {
   getConteudos as getAcConteudos,
   updateTarefa as updateAcTarefa,
   updateConteudo as updateAcConteudo,
+  getTarefasLivrosComPrazo,
+  updateBibliotecaItem,
+  getBibliotecaItem,
 } from "./academico-data";
 
 // Pasta virtual da Usina
@@ -956,6 +959,18 @@ export function completarAtividadeUnificada(id: string) {
   } else if (id.startsWith("academico-co-")) {
     const realId = id.replace("academico-co-", "");
     updateAcConteudo(realId, { status_estudo: "dominado" as any });
+  } else if (id.startsWith("academico-bl-")) {
+    // Format: academico-bl-{livroId}-{tarefaId}
+    const parts = id.replace("academico-bl-", "").split("-");
+    const tarefaId = parts.slice(-2).join("-"); // last 2 segments = tarefa id
+    const livroId = parts.slice(0, -2).join("-"); // rest = livro id
+    const livro = getBibliotecaItem(livroId);
+    if (livro) {
+      const tarefas = (livro.tarefas_livro || []).map(t =>
+        t.id === tarefaId ? { ...t, status: "concluida" as const } : t
+      );
+      updateBibliotecaItem(livroId, { tarefas_livro: tarefas });
+    }
   } else {
     completarAtividade(id);
   }
@@ -1048,10 +1063,33 @@ export function getAtividadesAcademico(): Atividade[] {
     updated_at: c.updated_at,
   }));
 
-  return [...tarefaAtividades, ...conteudoAtividades];
+  // Tarefas de livros da biblioteca
+  const livroTarefas: Atividade[] = getTarefasLivrosComPrazo().map(({ tarefa: t, livro }, i) => ({
+    id: `academico-bl-${livro.id}-${t.id}`,
+    projeto_id: `academico-biblioteca`,
+    atividade_pai_id: null,
+    titulo: `📖 ${t.titulo} (${livro.titulo})`,
+    descricao: "",
+    notas: "",
+    prioridade: "media" as const,
+    data_limite: t.prazo || null,
+    lembrete: null,
+    recorrencia: null,
+    pomodoros_estimados: 2,
+    pomodoros_realizados: 0,
+    tempo_total_seg: 0,
+    status: t.status === "concluida" ? "concluida" as const : "pendente" as const,
+    concluida_em: null,
+    etiqueta_ids: [],
+    ordem: i,
+    created_at: t.created_at,
+    updated_at: t.created_at,
+  }));
+
+  return [...tarefaAtividades, ...conteudoAtividades, ...livroTarefas];
 }
 
 // Verifica se atividade é do Acadêmico
 export function isAcademicoAtividade(id: string): boolean {
-  return id.startsWith("academico-t-") || id.startsWith("academico-co-");
+  return id.startsWith("academico-t-") || id.startsWith("academico-co-") || id.startsWith("academico-bl-");
 }

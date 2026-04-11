@@ -19,16 +19,17 @@ import RichEditor from "@/components/ui/RichEditor";
 import { useToast } from "@/contexts/ToastContext";
 import {
   getBiblioteca, createBibliotecaItem, updateBibliotecaItem, deleteBibliotecaItem,
-  getProgressoLeitura,
+  getProgressoLeitura, getDisciplinas,
 } from "@/lib/academico-data";
-import type { BibliotecaItem, BibliotecaInput, StatusLeitura, FormatoLeitura, CapituloLivro, TarefaLivro, StatusTarefaLivro, StatusLeituraCapitulo, SubtarefaLivro } from "@/types/academico";
-import { LABEL_STATUS_LEITURA, LABEL_FORMATO_LEITURA, LABEL_STATUS_LEITURA_CAPITULO } from "@/types/academico";
+import type { BibliotecaItem, BibliotecaInput, FormatoLeitura, CapituloLivro, TarefaLivro, StatusTarefaLivro, StatusLeituraFull, GrupoStatusLeitura, SubtarefaLivro } from "@/types/academico";
+import { LABEL_STATUS_LEITURA_FULL, STATUS_LEITURA_GRUPO, LABEL_GRUPO_STATUS, LABEL_FORMATO_LEITURA } from "@/types/academico";
 
-const STATUS_COLORS: Record<StatusLeitura, { bg: string; text: string }> = {
-  quero_ler:    { bg: "var(--bg-hover)", text: "var(--text-secondary)" },
-  em_progresso: { bg: "rgba(59,130,246,.1)", text: "#3b82f6" },
-  lido:         { bg: "rgba(16,185,129,.1)", text: "#10b981" },
-  abandonado:   { bg: "var(--red-bg)", text: "var(--red-text)" },
+const GRUPO_COLORS: Record<GrupoStatusLeitura, { bg: string; text: string }> = {
+  fila:          { bg: "var(--bg-hover)", text: "var(--text-secondary)" },
+  para_fazer:    { bg: "rgba(245,158,11,.1)", text: "#f59e0b" },
+  em_progresso:  { bg: "rgba(59,130,246,.1)", text: "#3b82f6" },
+  concluido:     { bg: "rgba(16,185,129,.1)", text: "#10b981" },
+  abandonado:    { bg: "rgba(239,68,68,.1)", text: "#ef4444" },
 };
 
 const TASK_STATUS_ICONS: Record<StatusTarefaLivro, React.ReactNode> = {
@@ -62,14 +63,24 @@ export default function BibliotecaPage() {
   const currentYear = new Date().getFullYear();
   const progresso = getProgressoLeitura(currentYear);
   const allBooks = getBiblioteca();
+  const disciplinas = getDisciplinas();
+  const [filterDisciplina, setFilterDisciplina] = useState("");
 
   let filtered = allBooks;
   if (search) {
     const q = search.toLowerCase();
     filtered = filtered.filter(b => b.titulo.toLowerCase().includes(q) || b.autores.toLowerCase().includes(q));
   }
-  if (filterStatus) filtered = filtered.filter(b => b.status === filterStatus);
+  if (filterStatus) {
+    // Filter can be a grupo or a specific status
+    if (Object.keys(LABEL_GRUPO_STATUS).includes(filterStatus)) {
+      filtered = filtered.filter(b => STATUS_LEITURA_GRUPO[b.status] === filterStatus);
+    } else {
+      filtered = filtered.filter(b => b.status === filterStatus);
+    }
+  }
   if (filterFormato) filtered = filtered.filter(b => b.formato === filterFormato);
+  if (filterDisciplina) filtered = filtered.filter(b => b.disciplina_id === filterDisciplina);
 
   const sorted = [...filtered].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
@@ -83,7 +94,7 @@ export default function BibliotecaPage() {
       setEditing(null);
       setForm({
         titulo: "", autores: "", genero: "", formato: "fisico", status: "quero_ler",
-        data_inicio: "", data_fim: "", num_paginas: null, andamento: "",
+        disciplina_id: "", data_inicio: "", data_fim: "", num_paginas: null, andamento: "",
         ano_leitura: null, projetos: [], avaliacao: "", editora: "",
         nacionalidade_autor: "", anotacoes_html: "", capa_base64: "",
         capitulos: [], tarefas_livro: [],
@@ -104,7 +115,8 @@ export default function BibliotecaPage() {
       autores: form.autores || "",
       genero: form.genero || "",
       formato: (form.formato as FormatoLeitura) || "fisico",
-      status: (form.status as StatusLeitura) || "quero_ler",
+      status: (form.status as StatusLeituraFull) || "quero_ler",
+      disciplina_id: form.disciplina_id || "",
       data_inicio: form.data_inicio || "",
       data_fim: form.data_fim || "",
       num_paginas: form.num_paginas || null,
@@ -132,9 +144,10 @@ export default function BibliotecaPage() {
 
   // ─── Capítulos helpers ───
   const addCapitulo = () => {
+    const bookStatus = (form.status as StatusLeituraFull) || "quero_ler";
     setCapitulos(prev => [...prev, {
       id: `cap-${uid()}`, titulo: "", pagina_inicio: null, pagina_fim: null,
-      status_leitura: "nao_lido" as StatusLeituraCapitulo, anotacoes: "", ordem: prev.length,
+      status_leitura: bookStatus, herda_status: true, anotacoes: "", ordem: prev.length,
     }]);
   };
 
@@ -147,11 +160,16 @@ export default function BibliotecaPage() {
   };
 
   const cycleCapituloStatus = (id: string) => {
-    const order: StatusLeituraCapitulo[] = ["nao_lido", "lido_dinamico", "lido", "lido_resumido"];
+    // Cycle through all statuses
+    const allStatuses: StatusLeituraFull[] = [
+      "quero_ler", "para_ler", "para_ler_resumir", "para_ler_resumir_mapa",
+      "lendo_rapido", "lendo", "lendo_resumindo", "lendo_resumindo_mapa",
+      "lido_rapido", "lido", "lido_resumido", "lido_resumido_mapa", "abandonado",
+    ];
     setCapitulos(prev => prev.map(c => {
       if (c.id !== id) return c;
-      const idx = order.indexOf(c.status_leitura || "nao_lido");
-      return { ...c, status_leitura: order[(idx + 1) % order.length] };
+      const idx = allStatuses.indexOf(c.status_leitura || "para_ler");
+      return { ...c, status_leitura: allStatuses[(idx + 1) % allStatuses.length], herda_status: false };
     }));
   };
 
@@ -212,16 +230,17 @@ export default function BibliotecaPage() {
   };
 
   // Stats
-  const lidos = allBooks.filter(b => b.status === "lido");
+  const lidos = allBooks.filter(b => concluidos.has(b.status));
   const lidosAno = lidos.filter(b => b.ano_leitura === currentYear);
   const generos = new Map<string, number>();
   lidosAno.forEach(b => { if (b.genero) generos.set(b.genero, (generos.get(b.genero) || 0) + 1); });
 
   // Capítulos stats for card
+  const concluidos = new Set(["lido_rapido", "lido", "lido_resumido", "lido_resumido_mapa"]);
   const getCapProgress = (b: BibliotecaItem) => {
     const caps = b.capitulos || [];
     if (caps.length === 0) return null;
-    const done = caps.filter(c => c.status_leitura && c.status_leitura !== "nao_lido").length;
+    const done = caps.filter(c => concluidos.has(c.status_leitura)).length;
     return { done, total: caps.length };
   };
 
@@ -232,7 +251,7 @@ export default function BibliotecaPage() {
     { key: "notas", label: "Notas", icon: <GripVertical size={14} /> },
   ];
 
-  const capsDone = capitulos.filter(c => c.status_leitura && c.status_leitura !== "nao_lido").length;
+  const capsDone = capitulos.filter(c => concluidos.has(c.status_leitura)).length;
 
   return (
     <Shell>
@@ -282,11 +301,11 @@ export default function BibliotecaPage() {
                   <p className="font-dm text-xs text-[var(--text-tertiary)]">Lidos</p>
                 </div>
                 <div className="text-center">
-                  <p className="font-mono text-2xl font-bold text-[var(--text-primary)]">{allBooks.filter(b => b.status === "em_progresso").length}</p>
+                  <p className="font-mono text-2xl font-bold text-[var(--text-primary)]">{allBooks.filter(b => STATUS_LEITURA_GRUPO[b.status] === "em_progresso").length}</p>
                   <p className="font-dm text-xs text-[var(--text-tertiary)]">Em leitura</p>
                 </div>
                 <div className="text-center">
-                  <p className="font-mono text-2xl font-bold text-[var(--text-primary)]">{allBooks.filter(b => b.status === "quero_ler").length}</p>
+                  <p className="font-mono text-2xl font-bold text-[var(--text-primary)]">{allBooks.filter(b => STATUS_LEITURA_GRUPO[b.status] === "fila" || STATUS_LEITURA_GRUPO[b.status] === "para_fazer").length}</p>
                   <p className="font-dm text-xs text-[var(--text-tertiary)]">Na fila</p>
                 </div>
                 <div className="text-center">
@@ -317,10 +336,18 @@ export default function BibliotecaPage() {
           </div>
           <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="input-hamilton text-sm py-2">
             <option value="">Todos status</option>
-            <option value="quero_ler">Quero ler</option>
-            <option value="em_progresso">Em progresso</option>
-            <option value="lido">Lido</option>
-            <option value="abandonado">Abandonado</option>
+            <optgroup label="Grupos">
+              <option value="fila">Fila</option>
+              <option value="para_fazer">Para fazer</option>
+              <option value="em_progresso">Em progresso</option>
+              <option value="concluido">Concluído</option>
+              <option value="abandonado">Abandonado</option>
+            </optgroup>
+            <optgroup label="Específicos">
+              {Object.entries(LABEL_STATUS_LEITURA_FULL).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </optgroup>
           </select>
           <select value={filterFormato} onChange={e => setFilterFormato(e.target.value)} className="input-hamilton text-sm py-2">
             <option value="">Todos formatos</option>
@@ -328,6 +355,14 @@ export default function BibliotecaPage() {
             <option value="digital">Digital</option>
             <option value="audiobook">Audiobook</option>
           </select>
+          {disciplinas.length > 0 && (
+            <select value={filterDisciplina} onChange={e => setFilterDisciplina(e.target.value)} className="input-hamilton text-sm py-2">
+              <option value="">Todas disciplinas</option>
+              {disciplinas.map(d => (
+                <option key={d.id} value={d.id}>{d.nome}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Book grid */}
@@ -336,7 +371,8 @@ export default function BibliotecaPage() {
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {sorted.map(b => {
-              const sc = STATUS_COLORS[b.status];
+              const grupo = STATUS_LEITURA_GRUPO[b.status] || "fila";
+              const sc = GRUPO_COLORS[grupo];
               const capProg = getCapProgress(b);
               const pendingTasks = (b.tarefas_livro || []).filter(t => t.status !== "concluida").length;
               return (
@@ -357,7 +393,7 @@ export default function BibliotecaPage() {
                           <p className="font-dm text-sm font-semibold text-[var(--text-primary)] line-clamp-2">{b.titulo}</p>
                           <p className="font-dm text-xs text-[var(--text-tertiary)] mt-0.5">{b.autores || "Autor desconhecido"}</p>
                         </div>
-                        <Badge bg={sc.bg} text={sc.text} label={LABEL_STATUS_LEITURA[b.status]} />
+                        <Badge bg={sc.bg} text={sc.text} label={LABEL_STATUS_LEITURA_FULL[b.status] || b.status} />
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
                         {b.genero && <Badge bg="var(--bg-hover)" text="var(--text-tertiary)" label={b.genero} />}
@@ -455,15 +491,28 @@ export default function BibliotecaPage() {
                     { value: "digital", label: "Digital" },
                     { value: "audiobook", label: "Audiobook" },
                   ]} />
-                  <Select label="Status" value={form.status || "quero_ler"} onChange={val => setF("status", val)} options={[
-                    { value: "quero_ler", label: "Quero ler" },
-                    { value: "em_progresso", label: "Em progresso" },
-                    { value: "lido", label: "Lido" },
-                    { value: "abandonado", label: "Abandonado" },
-                  ]} />
+                  <div>
+                    <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-1">Status</label>
+                    <select value={form.status || "quero_ler"} onChange={e => setF("status", e.target.value)} className="input-hamilton w-full text-sm py-2">
+                      {Object.entries(LABEL_STATUS_LEITURA_FULL).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
+                    </select>
+                  </div>
                   <Input label="Páginas" type="number" value={String(form.num_paginas ?? "")} onChange={val => setF("num_paginas", val ? Number(val) : null)} />
                   <Input label="Andamento" value={form.andamento || ""} onChange={val => setF("andamento", val)} placeholder="Ex: pág. 120 ou 45%" />
                   <Input label="Editora" value={form.editora || ""} onChange={val => setF("editora", val)} />
+                  {disciplinas.length > 0 && (
+                    <div>
+                      <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-1">Disciplina</label>
+                      <select value={form.disciplina_id || ""} onChange={e => setF("disciplina_id", e.target.value)} className="input-hamilton w-full text-sm py-2">
+                        <option value="">Nenhuma</option>
+                        {disciplinas.map(d => (
+                          <option key={d.id} value={d.id}>{d.nome}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <Input label="Data início" type="date" value={form.data_inicio || ""} onChange={val => setF("data_inicio", val)} />
                   <Input label="Data fim" type="date" value={form.data_fim || ""} onChange={val => setF("data_fim", val)} />
                   <Input label="Nacionalidade do autor" value={form.nacionalidade_autor || ""} onChange={val => setF("nacionalidade_autor", val)} />
@@ -669,22 +718,16 @@ export default function BibliotecaPage() {
 
 // ─── Capítulo Row Component ───
 
-const CAP_STATUS_COLORS: Record<StatusLeituraCapitulo, { icon: string; color: string }> = {
-  nao_lido: { icon: "○", color: "var(--text-tertiary)" },
-  lido_dinamico: { icon: "◐", color: "#f59e0b" },
-  lido: { icon: "●", color: "#10b981" },
-  lido_resumido: { icon: "★", color: "#8b5cf6" },
-};
-
 function CapituloRow({ cap, index, total, onCycleStatus, onUpdate, onRemove, onMove }: {
   cap: CapituloLivro; index: number; total: number;
   onCycleStatus: () => void; onUpdate: (data: Partial<CapituloLivro>) => void;
   onRemove: () => void; onMove: (dir: -1 | 1) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const status = cap.status_leitura || "nao_lido";
-  const sc = CAP_STATUS_COLORS[status];
-  const isRead = status !== "nao_lido";
+  const status = cap.status_leitura || "para_ler";
+  const grupo = STATUS_LEITURA_GRUPO[status] || "fila";
+  const gc = GRUPO_COLORS[grupo];
+  const isDone = grupo === "concluido";
 
   return (
     <div
@@ -705,9 +748,9 @@ function CapituloRow({ cap, index, total, onCycleStatus, onUpdate, onRemove, onM
         </div>
 
         {/* Status button */}
-        <button onClick={onCycleStatus} className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center hover:scale-110 transition-transform text-lg"
-          style={{ color: sc.color }} title={LABEL_STATUS_LEITURA_CAPITULO[status]}>
-          {sc.icon}
+        <button onClick={onCycleStatus} className="shrink-0 px-1.5 py-0.5 rounded-md text-[10px] font-dm font-medium hover:brightness-110 transition-all"
+          style={{ background: gc.bg, color: gc.text }} title={LABEL_STATUS_LEITURA_FULL[status]}>
+          {LABEL_GRUPO_STATUS[grupo]}
         </button>
 
         <div className="flex-1 min-w-0">
@@ -716,12 +759,12 @@ function CapituloRow({ cap, index, total, onCycleStatus, onUpdate, onRemove, onM
             onChange={e => onUpdate({ titulo: e.target.value })}
             placeholder={`Capítulo ${index + 1}`}
             className={`w-full bg-transparent text-sm font-dm outline-none ${
-              isRead ? "text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
+              isDone ? "text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
             }`}
           />
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="font-dm text-[10px] font-medium" style={{ color: sc.color }}>
-              {LABEL_STATUS_LEITURA_CAPITULO[status]}
+            <span className="font-dm text-[10px] font-medium" style={{ color: gc.text }}>
+              {LABEL_STATUS_LEITURA_FULL[status]}
             </span>
             {(cap.pagina_inicio || cap.pagina_fim) && (
               <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
@@ -743,6 +786,15 @@ function CapituloRow({ cap, index, total, onCycleStatus, onUpdate, onRemove, onM
 
       {expanded && (
         <div className="px-3 pb-3 space-y-2 border-t border-[var(--border-subtle)] pt-2 ml-11">
+          <div>
+            <label className="font-dm text-[10px] text-[var(--text-tertiary)]">Status do capítulo</label>
+            <select value={status} onChange={e => onUpdate({ status_leitura: e.target.value as any, herda_status: false })}
+              className="input-hamilton w-full text-xs py-1.5">
+              {Object.entries(LABEL_STATUS_LEITURA_FULL).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="font-dm text-[10px] text-[var(--text-tertiary)]">Pág. início</label>

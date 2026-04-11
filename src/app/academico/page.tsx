@@ -185,17 +185,25 @@ export default function AcademicoHub() {
                 />
               </Card>
             ) : (
-              <div className="space-y-2">
-                {livrosEmLeitura.slice(0, 5).map(livro => (
-                  <Card key={livro.id}>
-                    <div className="p-3">
-                      <p className="font-dm text-sm font-medium text-[var(--text-primary)] line-clamp-1">{livro.titulo}</p>
-                      <p className="font-dm text-xs text-[var(--text-tertiary)]">{livro.autores}</p>
+              <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                {livrosEmLeitura.slice(0, 8).map(livro => (
+                  <Link key={livro.id} href="/academico/biblioteca" className="shrink-0 group">
+                    <div className="w-[72px] space-y-1.5">
+                      {livro.capa_base64 ? (
+                        <div className="w-[72px] h-[104px] rounded-lg overflow-hidden border border-[var(--border-subtle)] group-hover:shadow-md transition-shadow">
+                          <img src={livro.capa_base64} alt={livro.titulo} className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="w-[72px] h-[104px] rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-hover)] flex items-center justify-center">
+                          <BookMarked size={20} className="text-[var(--text-tertiary)]" />
+                        </div>
+                      )}
+                      <p className="font-dm text-[10px] text-[var(--text-primary)] line-clamp-2 text-center leading-tight">{livro.titulo}</p>
                       {livro.andamento && (
-                        <p className="font-dm text-xs text-[var(--orange-500)] mt-1">{livro.andamento}</p>
+                        <p className="font-dm text-[9px] text-[var(--orange-500)] text-center">{livro.andamento}</p>
                       )}
                     </div>
-                  </Card>
+                  </Link>
                 ))}
               </div>
             )}
