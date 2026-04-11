@@ -5,6 +5,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import AuthGate from "@/components/AuthGate";
+import SpaRedirect from "@/components/SpaRedirect";
 
 const fraunces = Fraunces({
   subsets: ["latin"], weight: ["300", "500", "700"],
@@ -36,11 +37,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <script dangerouslySetInnerHTML={{ __html: `try{const t=localStorage.getItem('allos-theme');if(t==='dark')document.documentElement.classList.add('dark')}catch(e){}` }} />
         <script dangerouslySetInnerHTML={{ __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/psicoterapeutas/sw.js')}` }} />
-        <script dangerouslySetInnerHTML={{ __html: `(function(){var r=window.location,s=r.search;if(s&&s.indexOf('//')!==-1){var q=s.slice(1).split('&'),p=q[0];if(p.indexOf('//')===0){var decoded='/psicoterapeutas/'+p.slice(2).split('~and~').join('&');history.replaceState(null,null,decoded+(q.length>1?'?'+q.slice(1).join('&').split('~and~').join('&'):'')+r.hash)}}})()` }} />
+        <script dangerouslySetInnerHTML={{ __html: `(function(){var r=window.location,s=r.search;if(s&&s.indexOf('//')!==-1){var q=s.slice(1).split('&'),p=q[0];if(p.indexOf('//')===0){var decoded='/psicoterapeutas/'+p.slice(2).split('~and~').join('&');var full=decoded+(q.length>1?'?'+q.slice(1).join('&').split('~and~').join('&'):'')+r.hash;window.__SPA_REDIRECT=full;history.replaceState(null,null,full)}}})()` }} />
       </head>
       <body>
         <a href="#main-content" className="skip-link">Ir para o conteúdo principal</a>
         <AuthGate>
+          <SpaRedirect />
           <AuthProvider>
             <ThemeProvider>
               <ToastProvider>
