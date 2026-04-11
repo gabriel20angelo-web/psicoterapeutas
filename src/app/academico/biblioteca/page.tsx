@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft, BookMarked, Plus, Trash2, Search,
+  ArrowLeft, BookMarked, Plus, Trash2, Search, Timer,
   BarChart3, ImagePlus, X, ListChecks, CheckSquare, Square,
   ChevronDown, ChevronRight, GripVertical, Circle, CheckCircle2, Clock,
 } from "lucide-react";
@@ -442,6 +442,15 @@ export default function BibliotecaPage() {
                           ))}
                         </div>
                       )}
+                      {grupo === "em_progresso" && (
+                        <Link
+                          href={`/forja/foco?atividade=academico-bk-${b.id}`}
+                          onClick={e => e.stopPropagation()}
+                          className="mt-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-dm font-medium bg-[var(--orange-glow)] text-[var(--orange-500)] hover:brightness-110 transition-all w-fit"
+                        >
+                          <Timer size={12} /> Iniciar Pomodoro
+                        </Link>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -557,9 +566,17 @@ export default function BibliotecaPage() {
                       </p>
                     )}
                   </div>
-                  <Button variant="secondary" size="sm" onClick={addCapitulo}>
-                    <Plus size={14} /> Capítulo
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {editing && (
+                      <Link href={`/forja/foco?atividade=academico-bk-${editing.id}`}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-dm font-medium bg-[var(--orange-glow)] text-[var(--orange-500)] hover:brightness-110 transition-all">
+                        <Timer size={12} /> Pomodoro
+                      </Link>
+                    )}
+                    <Button variant="secondary" size="sm" onClick={addCapitulo}>
+                      <Plus size={14} /> Capítulo
+                    </Button>
+                  </div>
                 </div>
 
                 {capitulos.length > 0 && (
@@ -582,6 +599,7 @@ export default function BibliotecaPage() {
                         cap={cap}
                         index={idx}
                         total={capitulos.length}
+                        livroId={editing?.id || ""}
                         onCycleStatus={() => cycleCapituloStatus(cap.id)}
                         onUpdate={(data) => updateCapitulo(cap.id, data)}
                         onRemove={() => removeCapitulo(cap.id)}
@@ -739,8 +757,8 @@ export default function BibliotecaPage() {
 
 // ─── Capítulo Row Component ───
 
-function CapituloRow({ cap, index, total, onCycleStatus, onUpdate, onRemove, onMove }: {
-  cap: CapituloLivro; index: number; total: number;
+function CapituloRow({ cap, index, total, livroId, onCycleStatus, onUpdate, onRemove, onMove }: {
+  cap: CapituloLivro; index: number; total: number; livroId: string;
   onCycleStatus: () => void; onUpdate: (data: Partial<CapituloLivro>) => void;
   onRemove: () => void; onMove: (dir: -1 | 1) => void;
 }) {
@@ -821,8 +839,24 @@ function CapituloRow({ cap, index, total, onCycleStatus, onUpdate, onRemove, onM
             {cap.anotacoes && (
               <span className="font-dm text-[10px] text-[var(--orange-500)]">com anotações</span>
             )}
+            {cap.tempo_total_seg > 0 && (
+              <span className="font-mono text-[10px] text-[#3b82f6]">
+                {Math.floor(cap.tempo_total_seg / 60)}min
+              </span>
+            )}
+            {cap.pomodoros_realizados > 0 && (
+              <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
+                {cap.pomodoros_realizados}🍅
+              </span>
+            )}
           </div>
         </div>
+        {livroId && !isDone && (
+          <Link href={`/forja/foco?atividade=academico-bc-${livroId}-${cap.id}`}
+            className="shrink-0 p-1 rounded hover:bg-[var(--orange-glow)] transition-colors" title="Pomodoro">
+            <Timer size={14} className="text-[var(--orange-500)]" />
+          </Link>
+        )}
         <button onClick={() => setExpanded(!expanded)} className="shrink-0 p-1 rounded hover:bg-[var(--bg-hover)] transition-colors">
           {expanded ? <ChevronDown size={14} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={14} className="text-[var(--text-tertiary)]" />}
         </button>
