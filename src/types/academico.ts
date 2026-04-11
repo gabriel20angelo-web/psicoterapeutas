@@ -23,7 +23,13 @@ export type StatusTarefa = "pendente" | "em_andamento" | "concluida";
 export type TipoPresenca = "presente" | "ausente" | "justificada";
 
 export type StatusLeitura = "quero_ler" | "em_progresso" | "lido" | "abandonado";
+export type TipoLeitura = "livro" | "artigo";
 export type FormatoLeitura = "fisico" | "digital" | "audiobook";
+
+export const LABEL_TIPO_LEITURA: Record<TipoLeitura, string> = {
+  livro: "Livro",
+  artigo: "Artigo",
+};
 
 export type TipoMeta = "anual" | "mensal" | "diaria";
 export type StatusMeta = "nao_iniciada" | "em_andamento" | "concluida" | "abandonada";
@@ -58,6 +64,7 @@ export interface Disciplina {
   link_plataforma: string;
   status: StatusDisciplina;
   total_aulas_previstas: number;
+  faltas_manuais: number; // faltas registradas manualmente
   nota_aprovacao: number; // nota mínima para aprovação (padrão 7)
   nota_final: number | null; // nota final da disciplina (concluída)
   creditos: number; // créditos/horas-aula para cálculo do CR
@@ -89,6 +96,7 @@ export interface Conteudo {
 export interface Tarefa {
   id: string;
   disciplina_id: string;
+  biblioteca_id: string; // link to BibliotecaItem (optional)
   titulo: string;
   tipo: TipoTarefa;
   data_entrega: string; // YYYY-MM-DD
@@ -214,6 +222,7 @@ export interface BibliotecaItem {
   titulo: string;
   autores: string;
   genero: string;
+  tipo_leitura: TipoLeitura;
   formato: FormatoLeitura;
   status: StatusLeituraFull;
   disciplina_id: string; // link to Disciplina (optional)
@@ -418,6 +427,7 @@ export type TipoAvaliacao = "prova" | "trabalho" | "seminario" | "participacao" 
 export interface Avaliacao {
   id: string;
   disciplina_id: string;
+  biblioteca_id: string; // link to BibliotecaItem (optional)
   titulo: string; // ex: "P1", "Trabalho Final", "Seminário 2"
   tipo: TipoAvaliacao;
   peso: number; // 0-100, percentual no cálculo da média

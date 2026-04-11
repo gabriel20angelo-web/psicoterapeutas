@@ -21,8 +21,8 @@ import {
   getBiblioteca, createBibliotecaItem, updateBibliotecaItem, deleteBibliotecaItem,
   getProgressoLeitura, getDisciplinas,
 } from "@/lib/academico-data";
-import type { BibliotecaItem, BibliotecaInput, FormatoLeitura, CapituloLivro, TarefaLivro, StatusTarefaLivro, StatusLeituraFull, GrupoStatusLeitura, SubtarefaLivro } from "@/types/academico";
-import { LABEL_STATUS_LEITURA_FULL, STATUS_LEITURA_GRUPO, LABEL_GRUPO_STATUS, LABEL_FORMATO_LEITURA } from "@/types/academico";
+import type { BibliotecaItem, BibliotecaInput, FormatoLeitura, TipoLeitura, CapituloLivro, TarefaLivro, StatusTarefaLivro, StatusLeituraFull, GrupoStatusLeitura, SubtarefaLivro } from "@/types/academico";
+import { LABEL_STATUS_LEITURA_FULL, STATUS_LEITURA_GRUPO, LABEL_GRUPO_STATUS, LABEL_FORMATO_LEITURA, LABEL_TIPO_LEITURA } from "@/types/academico";
 
 const GRUPO_COLORS: Record<GrupoStatusLeitura, { bg: string; text: string }> = {
   fila:          { bg: "var(--bg-hover)", text: "var(--text-secondary)" },
@@ -96,7 +96,7 @@ export default function BibliotecaPage() {
     } else {
       setEditing(null);
       setForm({
-        titulo: "", autores: "", genero: "", formato: "fisico", status: "quero_ler",
+        titulo: "", autores: "", genero: "", tipo_leitura: "livro", formato: "fisico", status: "quero_ler",
         disciplina_id: "", data_inicio: "", data_fim: "", num_paginas: null, andamento: "",
         ano_leitura: null, projetos: [], avaliacao: "", editora: "",
         nacionalidade_autor: "", anotacoes_html: "", capa_base64: "",
@@ -117,6 +117,7 @@ export default function BibliotecaPage() {
       titulo: form.titulo || "",
       autores: form.autores || "",
       genero: form.genero || "",
+      tipo_leitura: (form.tipo_leitura as TipoLeitura) || "livro",
       formato: (form.formato as FormatoLeitura) || "fisico",
       status: (form.status as StatusLeituraFull) || "quero_ler",
       disciplina_id: form.disciplina_id || "",
@@ -401,6 +402,7 @@ export default function BibliotecaPage() {
                         <Badge bg={sc.bg} text={sc.text} label={LABEL_STATUS_LEITURA_FULL[b.status] || b.status} />
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
+                        {b.tipo_leitura === "artigo" && <Badge bg="rgba(139,92,246,.1)" text="#8b5cf6" label="Artigo" />}
                         {b.genero && <Badge bg="var(--bg-hover)" text="var(--text-tertiary)" label={b.genero} />}
                         <Badge bg="var(--bg-hover)" text="var(--text-tertiary)" label={LABEL_FORMATO_LEITURA[b.formato]} />
                         {b.andamento && <span className="font-dm text-[10px] text-[var(--orange-500)]">{b.andamento}</span>}
@@ -501,6 +503,10 @@ export default function BibliotecaPage() {
                   <Input label="Título *" value={form.titulo || ""} onChange={val => setF("titulo", val)} />
                   <Input label="Autor(es)" value={form.autores || ""} onChange={val => setF("autores", val)} />
                   <Input label="Gênero/Área" value={form.genero || ""} onChange={val => setF("genero", val)} placeholder="Ex: Psicanálise, TCC" />
+                  <Select label="Tipo" value={form.tipo_leitura || "livro"} onChange={val => setF("tipo_leitura", val)} options={[
+                    { value: "livro", label: "Livro" },
+                    { value: "artigo", label: "Artigo" },
+                  ]} />
                   <Select label="Formato" value={form.formato || "fisico"} onChange={val => setF("formato", val)} options={[
                     { value: "fisico", label: "Físico" },
                     { value: "digital", label: "Digital" },

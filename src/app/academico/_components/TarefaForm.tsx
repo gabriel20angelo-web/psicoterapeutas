@@ -5,7 +5,7 @@ import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import Textarea from "@/components/ui/Textarea";
 import Button from "@/components/ui/Button";
-import { getDisciplinasCursando, getConteudosByDisciplina } from "@/lib/academico-data";
+import { getDisciplinasCursando, getConteudosByDisciplina, getBiblioteca } from "@/lib/academico-data";
 import type { Tarefa, TarefaInput, TipoTarefa, StatusTarefa } from "@/types/academico";
 
 interface Props {
@@ -18,9 +18,11 @@ interface Props {
 
 export default function TarefaForm({ open, onClose, onSave, initial, defaultDisciplinaId }: Props) {
   const disciplinas = getDisciplinasCursando();
+  const livros = getBiblioteca();
 
   const [titulo, setTitulo] = useState(initial?.titulo || "");
   const [disciplinaId, setDisciplinaId] = useState(initial?.disciplina_id || defaultDisciplinaId || "");
+  const [bibliotecaId, setBibliotecaId] = useState((initial as any)?.biblioteca_id || "");
   const [tipo, setTipo] = useState<TipoTarefa>(initial?.tipo || "trabalho");
   const [dataEntrega, setDataEntrega] = useState(initial?.data_entrega || "");
   const [status, setStatus] = useState<StatusTarefa>(initial?.status || "pendente");
@@ -35,6 +37,7 @@ export default function TarefaForm({ open, onClose, onSave, initial, defaultDisc
     if (initial) {
       setTitulo(initial.titulo);
       setDisciplinaId(initial.disciplina_id);
+      setBibliotecaId((initial as any).biblioteca_id || "");
       setTipo(initial.tipo);
       setDataEntrega(initial.data_entrega);
       setStatus(initial.status);
@@ -56,6 +59,7 @@ export default function TarefaForm({ open, onClose, onSave, initial, defaultDisc
     if (!titulo.trim() || !disciplinaId) return;
     onSave({
       disciplina_id: disciplinaId,
+      biblioteca_id: bibliotecaId,
       titulo,
       tipo,
       data_entrega: dataEntrega,
@@ -77,6 +81,12 @@ export default function TarefaForm({ open, onClose, onSave, initial, defaultDisc
             { value: "", label: "Selecione..." },
             ...disciplinas.map(d => ({ value: d.id, label: d.nome })),
           ]} />
+          {livros.length > 0 && (
+            <Select label="Livro/Artigo" value={bibliotecaId} onChange={setBibliotecaId} options={[
+              { value: "", label: "Nenhum" },
+              ...livros.map(b => ({ value: b.id, label: `${b.tipo_leitura === "artigo" ? "📄" : "📖"} ${b.titulo}` })),
+            ]} />
+          )}
           <Select label="Tipo" value={tipo} onChange={val => setTipo(val as TipoTarefa)} options={[
             { value: "prova", label: "Prova" },
             { value: "trabalho", label: "Trabalho" },

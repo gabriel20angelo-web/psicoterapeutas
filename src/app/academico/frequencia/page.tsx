@@ -225,6 +225,24 @@ export default function FrequenciaPage() {
                 )}
               </div>
 
+              {/* Faltas manuais */}
+              <div className="flex items-center justify-between p-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-hover)]">
+                <div>
+                  <p className="font-dm text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Faltas manuais</p>
+                  <p className="font-dm text-[10px] text-[var(--text-tertiary)]">Faltas que você já sabe que tem mas não registrou dia a dia</p>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  value={(detailDisc as any).faltas_manuais || 0}
+                  onChange={e => {
+                    updateDisciplina(detailDisc.id, { faltas_manuais: Math.max(0, Number(e.target.value) || 0) } as any);
+                    refresh();
+                  }}
+                  className="input-hamilton text-sm py-1 px-2 w-16 text-center"
+                />
+              </div>
+
               {/* Registros */}
               <div className="flex items-center justify-between">
                 <p className="font-dm text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Registros</p>

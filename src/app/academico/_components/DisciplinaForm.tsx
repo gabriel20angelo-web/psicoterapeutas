@@ -32,6 +32,7 @@ const emptyForm: DisciplinaInput = {
   link_plataforma: "",
   status: "cursando",
   total_aulas_previstas: 0,
+  faltas_manuais: 0,
   nota_aprovacao: 7,
   nota_final: null,
   creditos: 0,

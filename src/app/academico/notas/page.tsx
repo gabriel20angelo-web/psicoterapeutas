@@ -15,7 +15,7 @@ import Select from "@/components/ui/Select";
 import EmptyState from "@/components/ui/EmptyState";
 import { useToast } from "@/contexts/ToastContext";
 import {
-  getDisciplinasCursando, getDisciplinas, getDisciplina,
+  getDisciplinasCursando, getDisciplinas, getDisciplina, getBiblioteca,
   getAvaliacoesByDisciplina, createAvaliacao, updateAvaliacao, deleteAvaliacao,
   calcularDesempenho, calcularCRGraduacao,
   getGraduacoes, getPeriodosEntities, getDisciplinasByPeriodo,
@@ -51,6 +51,7 @@ export default function NotasPage() {
   const [avNotaMaxima, setAvNotaMaxima] = useState("10");
   const [avData, setAvData] = useState("");
   const [avObs, setAvObs] = useState("");
+  const [avBibliotecaId, setAvBibliotecaId] = useState("");
 
   const disciplinasCursando = getDisciplinasCursando();
   const graduacoes = getGraduacoes();
@@ -72,6 +73,7 @@ export default function NotasPage() {
       setAvNotaMaxima(String(av.nota_maxima));
       setAvData(av.data);
       setAvObs(av.observacoes);
+      setAvBibliotecaId((av as any).biblioteca_id || "");
     } else {
       setEditingAv(null);
       setAvTitulo("");
@@ -81,6 +83,7 @@ export default function NotasPage() {
       setAvNotaMaxima("10");
       setAvData("");
       setAvObs("");
+      setAvBibliotecaId("");
     }
     setShowForm(true);
   };
@@ -89,6 +92,7 @@ export default function NotasPage() {
     if (!avTitulo.trim() || !formDiscId) return;
     const data: AvaliacaoInput = {
       disciplina_id: formDiscId,
+      biblioteca_id: avBibliotecaId,
       titulo: avTitulo,
       tipo: avTipo,
       peso: Number(avPeso) || 0,
@@ -313,6 +317,12 @@ export default function NotasPage() {
               <Input label="Data" type="date" value={avData} onChange={setAvData} />
             </div>
             <Input label="Observações" value={avObs} onChange={setAvObs} placeholder="Ex: Matéria dos caps 1-5" />
+            {getBiblioteca().length > 0 && (
+              <Select label="Livro/Artigo relacionado" value={avBibliotecaId} onChange={setAvBibliotecaId} options={[
+                { value: "", label: "Nenhum" },
+                ...getBiblioteca().map(b => ({ value: b.id, label: `${b.tipo_leitura === "artigo" ? "📄" : "📖"} ${b.titulo}` })),
+              ]} />
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setShowForm(false)}>Cancelar</Button>
               <Button variant="primary" onClick={handleSave}>{editingAv ? "Salvar" : "Criar"}</Button>

@@ -161,6 +161,7 @@ export default function DisciplinaDetailPage() {
     } else {
       createTarefa({
         disciplina_id: id,
+        biblioteca_id: "",
         titulo: tarefaTitulo,
         tipo: tarefaTipo,
         data_entrega: tarefaData,

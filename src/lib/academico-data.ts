@@ -66,7 +66,10 @@ function today(): string { return new Date().toISOString().slice(0, 10); }
 // ═══════════════════════════════════════════════════
 
 export function getDisciplinas(): Disciplina[] {
-  return load<Disciplina>(KEYS.disciplinas, []);
+  return load<Disciplina>(KEYS.disciplinas, []).map(d => ({
+    ...d,
+    faltas_manuais: (d as any).faltas_manuais || 0,
+  }));
 }
 
 export function getDisciplina(id: string): Disciplina | undefined {
@@ -185,7 +188,10 @@ export function deleteConteudo(id: string): void {
 // ═══════════════════════════════════════════════════
 
 export function getTarefas(): Tarefa[] {
-  return load<Tarefa>(KEYS.tarefas, []);
+  return load<Tarefa>(KEYS.tarefas, []).map(t => ({
+    ...t,
+    biblioteca_id: (t as any).biblioteca_id || "",
+  }));
 }
 
 export function getTarefa(id: string): Tarefa | undefined {
@@ -267,10 +273,11 @@ export function calcularFrequencia(disciplinaId: string): FrequenciaResumo {
   const disciplina = getDisciplina(disciplinaId);
   const registros = getFrequenciaByDisciplina(disciplinaId);
   const total_previstas = disciplina?.total_aulas_previstas || 0;
+  const faltasManuais = (disciplina as any)?.faltas_manuais || 0;
   const presentes = registros.filter(r => r.presenca === "presente").length;
-  const ausentes = registros.filter(r => r.presenca === "ausente").length;
+  const ausentes = registros.filter(r => r.presenca === "ausente").length + faltasManuais;
   const justificadas = registros.filter(r => r.presenca === "justificada").length;
-  const total_registradas = registros.length;
+  const total_registradas = registros.length + faltasManuais;
 
   // Percentual de frequência = presenças / total previstas * 100
   const percentual = total_previstas > 0
@@ -304,6 +311,7 @@ function migrateStatus(s: string): string {
 export function getBiblioteca(): BibliotecaItem[] {
   return load<BibliotecaItem>(KEYS.biblioteca, []).map(b => ({
     ...b,
+    tipo_leitura: (b as any).tipo_leitura || "livro",
     status: migrateStatus(b.status) as any,
     disciplina_id: (b as any).disciplina_id || "",
     pomodoros_realizados: (b as any).pomodoros_realizados || 0,
@@ -511,7 +519,10 @@ export function updateConfigAcademica(data: Partial<ConfigAcademica>): void {
 // ═══════════════════════════════════════════════════
 
 export function getAvaliacoes(): Avaliacao[] {
-  return load<Avaliacao>(KEYS.avaliacoes, []);
+  return load<Avaliacao>(KEYS.avaliacoes, []).map(a => ({
+    ...a,
+    biblioteca_id: (a as any).biblioteca_id || "",
+  }));
 }
 
 export function getAvaliacoesByDisciplina(disciplinaId: string): Avaliacao[] {
