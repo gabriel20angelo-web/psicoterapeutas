@@ -651,7 +651,11 @@ export function calcularCRGraduacao(graduacaoId: string) {
 // ═══════════════════════════════════════════════════
 
 export function getGraduacoes(): Graduacao[] {
-  return load<Graduacao>(KEYS.graduacoes, []);
+  return load<Graduacao>(KEYS.graduacoes, []).map(g => ({
+    ...g,
+    tipo: (g as any).tipo || "graduacao",
+    ativa: (g as any).ativa ?? true,
+  }));
 }
 
 export function getGraduacao(id: string): Graduacao | undefined {

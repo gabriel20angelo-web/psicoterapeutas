@@ -22,8 +22,8 @@ import {
   getGraduacoes, createGraduacao, updateGraduacao, deleteGraduacao,
 } from "@/lib/academico-data";
 import DisciplinaForm from "../_components/DisciplinaForm";
-import type { Disciplina, DisciplinaInput, Periodo, Graduacao } from "@/types/academico";
-import { LABEL_STATUS_DISCIPLINA, LABEL_TIPO_DISCIPLINA } from "@/types/academico";
+import type { Disciplina, DisciplinaInput, Periodo, Graduacao, TipoGraduacao } from "@/types/academico";
+import { LABEL_STATUS_DISCIPLINA, LABEL_TIPO_DISCIPLINA, LABEL_TIPO_GRADUACAO } from "@/types/academico";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   cursando:  { bg: "var(--green-bg, rgba(16,185,129,.1))", text: "var(--green-text, #10b981)" },
@@ -62,8 +62,10 @@ export default function PeriodosPage() {
   const [showGradForm, setShowGradForm] = useState(false);
   const [editingGrad, setEditingGrad] = useState<Graduacao | null>(null);
   const [gradNome, setGradNome] = useState("");
+  const [gradTipo, setGradTipo] = useState<TipoGraduacao>("graduacao");
   const [gradInstituicao, setGradInstituicao] = useState("");
   const [gradTotalCreditos, setGradTotalCreditos] = useState("");
+  const [gradAtiva, setGradAtiva] = useState(true);
 
   const graduacoes = getGraduacoes();
   const periodosEntities = getPeriodosEntities().sort((a, b) => a.numero - b.numero);
@@ -189,25 +191,30 @@ export default function PeriodosPage() {
     if (grad) {
       setEditingGrad(grad);
       setGradNome(grad.nome);
+      setGradTipo(grad.tipo || "graduacao");
       setGradInstituicao(grad.instituicao);
       setGradTotalCreditos(String(grad.total_creditos || ""));
+      setGradAtiva(grad.ativa ?? true);
     } else {
       setEditingGrad(null);
       setGradNome("");
+      setGradTipo("graduacao");
       setGradInstituicao("");
       setGradTotalCreditos("");
+      setGradAtiva(true);
     }
     setShowGradForm(true);
   };
 
   const handleSaveGrad = () => {
     if (!gradNome.trim()) return;
+    const gradData = { nome: gradNome, tipo: gradTipo, instituicao: gradInstituicao, total_creditos: Number(gradTotalCreditos) || 0, ativa: gradAtiva };
     if (editingGrad) {
-      updateGraduacao(editingGrad.id, { nome: gradNome, instituicao: gradInstituicao, total_creditos: Number(gradTotalCreditos) || 0 });
-      toast("Graduação atualizada!", { type: "success" });
+      updateGraduacao(editingGrad.id, gradData);
+      toast(`${LABEL_TIPO_GRADUACAO[gradTipo]} atualizada!`, { type: "success" });
     } else {
-      createGraduacao({ nome: gradNome, instituicao: gradInstituicao, total_creditos: Number(gradTotalCreditos) || 0 });
-      toast("Graduação criada!", { type: "success" });
+      createGraduacao(gradData);
+      toast(`${LABEL_TIPO_GRADUACAO[gradTipo]} criada!`, { type: "success" });
     }
     setShowGradForm(false);
     setEditingGrad(null);
@@ -365,7 +372,7 @@ export default function PeriodosPage() {
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => openGradForm()}>
-              <BookOpen size={16} /> Nova graduação
+              <BookOpen size={16} /> Novo curso/grad.
             </Button>
             {periodosEntities.length >= 2 && (
               <Button variant="secondary" onClick={() => setShowDuplicar(true)}>
@@ -394,9 +401,15 @@ export default function PeriodosPage() {
               return (
                 <div key={grad.id}>
                   <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <GraduationCap size={18} className="text-[var(--orange-500)]" />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {grad.tipo === "curso" ? <BookOpen size={18} className="text-[#8b5cf6]" /> : <GraduationCap size={18} className="text-[var(--orange-500)]" />}
                       <h2 className="font-fraunces text-lg font-semibold text-[var(--text-primary)]">{grad.nome}</h2>
+                      <Badge bg={grad.tipo === "curso" ? "rgba(139,92,246,.1)" : "var(--orange-glow)"} text={grad.tipo === "curso" ? "#8b5cf6" : "var(--orange-500)"} label={LABEL_TIPO_GRADUACAO[grad.tipo || "graduacao"]} />
+                      {grad.ativa ? (
+                        <Badge bg="rgba(16,185,129,.1)" text="#10b981" label="Ativa" />
+                      ) : (
+                        <Badge bg="var(--bg-hover)" text="var(--text-tertiary)" label="Inativa" />
+                      )}
                       {grad.instituicao && (
                         <span className="font-dm text-xs text-[var(--text-tertiary)]">— {grad.instituicao}</span>
                       )}
@@ -486,11 +499,20 @@ export default function PeriodosPage() {
 
         {/* Graduação Form Modal */}
         <Modal isOpen={showGradForm} onClose={() => { setShowGradForm(false); setEditingGrad(null); }}
-          title={editingGrad ? "Editar Graduação" : "Nova Graduação"} size="sm">
+          title={editingGrad ? `Editar ${LABEL_TIPO_GRADUACAO[gradTipo]}` : "Nova Graduação/Curso"} size="sm">
           <div className="space-y-4">
-            <Input label="Nome do curso *" value={gradNome} onChange={setGradNome} placeholder="Ex: Psicologia" />
+            <Select label="Tipo *" value={gradTipo} onChange={val => setGradTipo(val as TipoGraduacao)} options={[
+              { value: "graduacao", label: "Graduação" },
+              { value: "curso", label: "Curso" },
+            ]} />
+            <Input label="Nome *" value={gradNome} onChange={setGradNome} placeholder={gradTipo === "curso" ? "Ex: Pós em TCC, Curso de extensão" : "Ex: Psicologia"} />
             <Input label="Instituição" value={gradInstituicao} onChange={setGradInstituicao} placeholder="Ex: UFMG" />
-            <Input label="Total de créditos do curso" type="number" value={gradTotalCreditos} onChange={setGradTotalCreditos} placeholder="Ex: 240" />
+            <Input label="Total de créditos" type="number" value={gradTotalCreditos} onChange={setGradTotalCreditos} placeholder="Ex: 240 (opcional)" />
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={gradAtiva} onChange={e => setGradAtiva(e.target.checked)}
+                className="w-4 h-4 rounded border-[var(--border-default)] accent-[#10b981]" />
+              <span className="font-dm text-sm text-[var(--text-secondary)]">Ativa (em andamento)</span>
+            </label>
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => { setShowGradForm(false); setEditingGrad(null); }}>Cancelar</Button>
               <Button variant="primary" onClick={handleSaveGrad} disabled={!gradNome.trim()}>

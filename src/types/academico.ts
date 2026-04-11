@@ -282,11 +282,20 @@ export interface Extracurricular {
   updated_at: string;
 }
 
+export type TipoGraduacao = "graduacao" | "curso";
+
+export const LABEL_TIPO_GRADUACAO: Record<TipoGraduacao, string> = {
+  graduacao: "Graduação",
+  curso: "Curso",
+};
+
 export interface Graduacao {
   id: string;
+  tipo: TipoGraduacao;
   nome: string; // ex: "Psicologia", "Ciência da Computação"
   instituicao: string;
   total_creditos: number; // total de créditos para conclusão do curso
+  ativa: boolean; // allows multiple active
   created_at: string;
 }
 
