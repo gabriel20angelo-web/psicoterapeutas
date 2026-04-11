@@ -4,7 +4,7 @@ import type {
 } from '@/types/database';
 import { supabase } from './supabase';
 import { isWithinInterval, parseISO } from 'date-fns';
-import { createPatientVaultFolder } from './notes';
+// Lazy import to avoid circular dependency (notes.ts imports data.ts)
 
 // ─── LOCAL STORAGE FALLBACK ───
 function loadLocal<T>(key: string): T[] {
@@ -223,8 +223,8 @@ export function createPaciente(data: Omit<Paciente, 'id' | 'created_at' | 'updat
   saveLocal(LS.pacientes, pacientes);
   notifyChange();
 
-  // Create Obsidian vault folder for this patient
-  createPatientVaultFolder(novo.nome).catch(() => {});
+  // Create Obsidian vault folder for this patient (lazy import to avoid circular dep)
+  import('./notes').then(m => m.createPatientVaultFolder(novo.nome)).catch(() => {});
 
   if (_useSupabase) {
     const { id: _oldId, ...rest } = novo;
