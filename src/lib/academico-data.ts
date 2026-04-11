@@ -15,6 +15,7 @@ import type {
   Periodo, PeriodoInput,
   Graduacao, GraduacaoInput,
   Avaliacao, AvaliacaoInput,
+  CursoAvulso, CursoAvulsoInput,
   DesempenhoDisciplina, StatusAprovacao,
   ConfigAcademica, FrequenciaResumo,
 } from "@/types/academico";
@@ -35,6 +36,7 @@ const KEYS = {
   periodos:         "ac:periodos",
   graduacoes:       "ac:graduacoes",
   avaliacoes:       "ac:avaliacoes",
+  cursos_avulsos:   "ac:cursos-avulsos",
   config:           "ac:config",
 };
 
@@ -384,6 +386,49 @@ export function getTarefasLivrosComPrazo(): { tarefa: import("@/types/academico"
     }
   }
   return result;
+}
+
+// ═══════════════════════════════════════════════════
+// CURSOS AVULSOS
+// ═══════════════════════════════════════════════════
+
+export function getCursosAvulsos(): CursoAvulso[] {
+  return load<CursoAvulso>(KEYS.cursos_avulsos, []).map(c => ({
+    ...c,
+    etapas: (c.etapas || []).map((e: any, i: number) => ({ ...e, ordem: e.ordem ?? i })),
+    pomodoros_realizados: (c as any).pomodoros_realizados || 0,
+    tempo_total_seg: (c as any).tempo_total_seg || 0,
+    tags: c.tags || [],
+  }));
+}
+
+export function getCursoAvulso(id: string): CursoAvulso | undefined {
+  return getCursosAvulsos().find(c => c.id === id);
+}
+
+export function getCursosEmAndamento(): CursoAvulso[] {
+  return getCursosAvulsos().filter(c => c.status === "em_andamento");
+}
+
+export function createCursoAvulso(data: CursoAvulsoInput): CursoAvulso {
+  const items = getCursosAvulsos();
+  const novo: CursoAvulso = { ...data, id: `ca-${uid()}`, created_at: now(), updated_at: now() };
+  items.push(novo);
+  save(KEYS.cursos_avulsos, items);
+  return novo;
+}
+
+export function updateCursoAvulso(id: string, data: Partial<CursoAvulso>): void {
+  const items = getCursosAvulsos();
+  const idx = items.findIndex(c => c.id === id);
+  if (idx !== -1) {
+    items[idx] = { ...items[idx], ...data, updated_at: now() };
+    save(KEYS.cursos_avulsos, items);
+  }
+}
+
+export function deleteCursoAvulso(id: string): void {
+  save(KEYS.cursos_avulsos, getCursosAvulsos().filter(c => c.id !== id));
 }
 
 // ═══════════════════════════════════════════════════
