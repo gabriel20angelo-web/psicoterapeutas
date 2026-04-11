@@ -1,10 +1,10 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { useRef } from "react";
 import {
-  ArrowLeft, BookMarked, Plus, Pencil, Trash2, Search,
-  BookOpen, BarChart3, ImagePlus, X,
+  ArrowLeft, BookMarked, Plus, Trash2, Search,
+  BarChart3, ImagePlus, X, ListChecks, CheckSquare, Square,
+  ChevronDown, ChevronRight, GripVertical, Circle, CheckCircle2, Clock,
 } from "lucide-react";
 import Shell from "@/components/Shell";
 import Card from "@/components/ui/Card";
@@ -19,9 +19,9 @@ import RichEditor from "@/components/ui/RichEditor";
 import { useToast } from "@/contexts/ToastContext";
 import {
   getBiblioteca, createBibliotecaItem, updateBibliotecaItem, deleteBibliotecaItem,
-  getProgressoLeitura, getConfigAcademica,
+  getProgressoLeitura,
 } from "@/lib/academico-data";
-import type { BibliotecaItem, BibliotecaInput, StatusLeitura, FormatoLeitura } from "@/types/academico";
+import type { BibliotecaItem, BibliotecaInput, StatusLeitura, FormatoLeitura, CapituloLivro, TarefaLivro, StatusTarefaLivro } from "@/types/academico";
 import { LABEL_STATUS_LEITURA, LABEL_FORMATO_LEITURA } from "@/types/academico";
 
 const STATUS_COLORS: Record<StatusLeitura, { bg: string; text: string }> = {
@@ -30,6 +30,16 @@ const STATUS_COLORS: Record<StatusLeitura, { bg: string; text: string }> = {
   lido:         { bg: "rgba(16,185,129,.1)", text: "#10b981" },
   abandonado:   { bg: "var(--red-bg)", text: "var(--red-text)" },
 };
+
+const TASK_STATUS_ICONS: Record<StatusTarefaLivro, React.ReactNode> = {
+  pendente: <Circle size={16} className="text-[var(--text-tertiary)]" />,
+  em_andamento: <Clock size={16} className="text-[#3b82f6]" />,
+  concluida: <CheckCircle2 size={16} className="text-[#10b981]" />,
+};
+
+type FormTab = "info" | "capitulos" | "tarefas" | "notas";
+
+function uid() { return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 
 export default function BibliotecaPage() {
   const { toast } = useToast();
@@ -42,9 +52,12 @@ export default function BibliotecaPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<BibliotecaItem | null>(null);
   const [showStats, setShowStats] = useState(false);
+  const [activeTab, setActiveTab] = useState<FormTab>("info");
 
   // Form state
   const [form, setForm] = useState<Partial<BibliotecaInput>>({});
+  const [capitulos, setCapitulos] = useState<CapituloLivro[]>([]);
+  const [tarefas, setTarefas] = useState<TarefaLivro[]>([]);
 
   const currentYear = new Date().getFullYear();
   const progresso = getProgressoLeitura(currentYear);
@@ -64,6 +77,8 @@ export default function BibliotecaPage() {
     if (item) {
       setEditing(item);
       setForm({ ...item });
+      setCapitulos(item.capitulos || []);
+      setTarefas(item.tarefas_livro || []);
     } else {
       setEditing(null);
       setForm({
@@ -71,8 +86,12 @@ export default function BibliotecaPage() {
         data_inicio: "", data_fim: "", num_paginas: null, andamento: "",
         ano_leitura: null, projetos: [], avaliacao: "", editora: "",
         nacionalidade_autor: "", anotacoes_html: "", capa_base64: "",
+        capitulos: [], tarefas_livro: [],
       });
+      setCapitulos([]);
+      setTarefas([]);
     }
+    setActiveTab("info");
     setShowForm(true);
   };
 
@@ -97,6 +116,8 @@ export default function BibliotecaPage() {
       nacionalidade_autor: form.nacionalidade_autor || "",
       anotacoes_html: form.anotacoes_html || "",
       capa_base64: form.capa_base64 || "",
+      capitulos,
+      tarefas_livro: tarefas,
     };
     if (editing) {
       updateBibliotecaItem(editing.id, data);
@@ -109,11 +130,73 @@ export default function BibliotecaPage() {
     refresh();
   };
 
+  // ─── Capítulos helpers ───
+  const addCapitulo = () => {
+    setCapitulos(prev => [...prev, {
+      id: `cap-${uid()}`, titulo: "", pagina_inicio: null, pagina_fim: null,
+      lido: false, anotacoes: "",
+    }]);
+  };
+
+  const updateCapitulo = (id: string, data: Partial<CapituloLivro>) => {
+    setCapitulos(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
+  };
+
+  const removeCapitulo = (id: string) => {
+    setCapitulos(prev => prev.filter(c => c.id !== id));
+  };
+
+  const toggleCapituloLido = (id: string) => {
+    setCapitulos(prev => prev.map(c => c.id === id ? { ...c, lido: !c.lido } : c));
+  };
+
+  // ─── Tarefas helpers ───
+  const addTarefa = () => {
+    setTarefas(prev => [...prev, {
+      id: `tl-${uid()}`, titulo: "", status: "pendente" as StatusTarefaLivro,
+      prazo: "", created_at: new Date().toISOString(),
+    }]);
+  };
+
+  const updateTarefa = (id: string, data: Partial<TarefaLivro>) => {
+    setTarefas(prev => prev.map(t => t.id === id ? { ...t, ...data } : t));
+  };
+
+  const removeTarefa = (id: string) => {
+    setTarefas(prev => prev.filter(t => t.id !== id));
+  };
+
+  const cycleTaskStatus = (id: string) => {
+    const order: StatusTarefaLivro[] = ["pendente", "em_andamento", "concluida"];
+    setTarefas(prev => prev.map(t => {
+      if (t.id !== id) return t;
+      const idx = order.indexOf(t.status);
+      return { ...t, status: order[(idx + 1) % order.length] };
+    }));
+  };
+
   // Stats
   const lidos = allBooks.filter(b => b.status === "lido");
   const lidosAno = lidos.filter(b => b.ano_leitura === currentYear);
   const generos = new Map<string, number>();
   lidosAno.forEach(b => { if (b.genero) generos.set(b.genero, (generos.get(b.genero) || 0) + 1); });
+
+  // Capítulos stats for card
+  const getCapProgress = (b: BibliotecaItem) => {
+    const caps = b.capitulos || [];
+    if (caps.length === 0) return null;
+    const done = caps.filter(c => c.lido).length;
+    return { done, total: caps.length };
+  };
+
+  const tabItems: { key: FormTab; label: string; icon: React.ReactNode }[] = [
+    { key: "info", label: "Informações", icon: <BookMarked size={14} /> },
+    { key: "capitulos", label: `Capítulos${capitulos.length ? ` (${capitulos.length})` : ""}`, icon: <ListChecks size={14} /> },
+    { key: "tarefas", label: `Tarefas${tarefas.length ? ` (${tarefas.length})` : ""}`, icon: <CheckSquare size={14} /> },
+    { key: "notas", label: "Notas", icon: <GripVertical size={14} /> },
+  ];
+
+  const capsDone = capitulos.filter(c => c.lido).length;
 
   return (
     <Shell>
@@ -218,10 +301,11 @@ export default function BibliotecaPage() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {sorted.map(b => {
               const sc = STATUS_COLORS[b.status];
+              const capProg = getCapProgress(b);
+              const pendingTasks = (b.tarefas_livro || []).filter(t => t.status !== "concluida").length;
               return (
                 <Card key={b.id} hover onClick={() => openForm(b)}>
                   <div className="p-4 flex gap-3">
-                    {/* Capa do livro */}
                     {b.capa_base64 ? (
                       <div className="w-16 h-24 rounded-lg overflow-hidden shrink-0 border border-[var(--border-subtle)]">
                         <img src={b.capa_base64} alt={b.titulo} className="w-full h-full object-cover" />
@@ -232,7 +316,7 @@ export default function BibliotecaPage() {
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-start justify-between gap-2 mb-1">
                         <div className="min-w-0">
                           <p className="font-dm text-sm font-semibold text-[var(--text-primary)] line-clamp-2">{b.titulo}</p>
                           <p className="font-dm text-xs text-[var(--text-tertiary)] mt-0.5">{b.autores || "Autor desconhecido"}</p>
@@ -244,8 +328,26 @@ export default function BibliotecaPage() {
                         <Badge bg="var(--bg-hover)" text="var(--text-tertiary)" label={LABEL_FORMATO_LEITURA[b.formato]} />
                         {b.andamento && <span className="font-dm text-[10px] text-[var(--orange-500)]">{b.andamento}</span>}
                       </div>
+                      {/* Capítulos + Tarefas indicators */}
+                      {(capProg || pendingTasks > 0) && (
+                        <div className="flex items-center gap-3 mt-2">
+                          {capProg && (
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-16 h-1.5 rounded-full bg-[var(--bg-hover)] overflow-hidden">
+                                <div className="h-full rounded-full bg-[#10b981] transition-all" style={{ width: `${(capProg.done / capProg.total) * 100}%` }} />
+                              </div>
+                              <span className="font-mono text-[10px] text-[var(--text-tertiary)]">{capProg.done}/{capProg.total}</span>
+                            </div>
+                          )}
+                          {pendingTasks > 0 && (
+                            <span className="font-dm text-[10px] text-[var(--orange-500)] flex items-center gap-0.5">
+                              <CheckSquare size={10} /> {pendingTasks} pendente{pendingTasks > 1 ? "s" : ""}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {b.projetos.length > 0 && (
-                        <div className="flex gap-1 mt-2 flex-wrap">
+                        <div className="flex gap-1 mt-1.5 flex-wrap">
                           {b.projetos.map(p => (
                             <span key={p} className="px-1.5 py-0.5 rounded text-[10px] font-dm bg-[rgba(139,92,246,.1)] text-[#8b5cf6]">{p}</span>
                           ))}
@@ -262,65 +364,219 @@ export default function BibliotecaPage() {
         {/* Book Form Modal */}
         <Modal isOpen={showForm} onClose={() => setShowForm(false)} title={editing ? "Editar Livro" : "Novo Livro"} size="lg">
           <div className="space-y-4">
-            {/* Upload de capa */}
-            <div>
-              <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-2">Capa do livro</label>
-              <div className="flex items-center gap-4">
-                {form.capa_base64 ? (
-                  <div className="relative w-20 h-28 rounded-lg overflow-hidden border border-[var(--border-subtle)]">
-                    <img src={form.capa_base64} alt="Capa" className="w-full h-full object-cover" />
-                    <button type="button" onClick={() => setF("capa_base64", "")}
-                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-[var(--bg-card)] border border-[var(--border-subtle)] flex items-center justify-center hover:bg-[var(--red-bg)]">
-                      <X size={10} className="text-[var(--text-tertiary)]" />
-                    </button>
-                  </div>
-                ) : (
-                  <label className="w-20 h-28 rounded-lg border-2 border-dashed border-[var(--border-subtle)] hover:border-[var(--orange-500)] flex flex-col items-center justify-center cursor-pointer transition-colors">
-                    <ImagePlus size={18} className="text-[var(--text-tertiary)] mb-1" />
-                    <span className="font-dm text-[10px] text-[var(--text-tertiary)]">Upload</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      if (file.size > 500_000) { alert("Imagem muito grande (máx. 500KB)"); return; }
-                      const reader = new FileReader();
-                      reader.onload = (ev) => setF("capa_base64", ev.target?.result as string);
-                      reader.readAsDataURL(file);
-                    }} />
-                  </label>
-                )}
-                <p className="font-dm text-[10px] text-[var(--text-tertiary)]">Formato vertical, máx. 500KB</p>
-              </div>
+            {/* Tabs */}
+            <div className="flex gap-1 border-b border-[var(--border-subtle)] overflow-x-auto pb-px -mx-1 px-1">
+              {tabItems.map(t => (
+                <button key={t.key} onClick={() => setActiveTab(t.key)}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-dm font-medium rounded-t-lg whitespace-nowrap transition-colors ${
+                    activeTab === t.key
+                      ? "text-[var(--orange-500)] border-b-2 border-[var(--orange-500)] -mb-px"
+                      : "text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]"
+                  }`}>
+                  {t.icon} {t.label}
+                </button>
+              ))}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input label="Título *" value={form.titulo || ""} onChange={val => setF("titulo", val)} />
-              <Input label="Autor(es)" value={form.autores || ""} onChange={val => setF("autores", val)} />
-              <Input label="Gênero/Área" value={form.genero || ""} onChange={val => setF("genero", val)} placeholder="Ex: Psicanálise, TCC" />
-              <Select label="Formato" value={form.formato || "fisico"} onChange={val => setF("formato", val)} options={[
-                { value: "fisico", label: "Físico" },
-                { value: "digital", label: "Digital" },
-                { value: "audiobook", label: "Audiobook" },
-              ]} />
-              <Select label="Status" value={form.status || "quero_ler"} onChange={val => setF("status", val)} options={[
-                { value: "quero_ler", label: "Quero ler" },
-                { value: "em_progresso", label: "Em progresso" },
-                { value: "lido", label: "Lido" },
-                { value: "abandonado", label: "Abandonado" },
-              ]} />
-              <Input label="Páginas" type="number" value={String(form.num_paginas ?? "")} onChange={val => setF("num_paginas", val ? Number(val) : null)} />
-              <Input label="Andamento" value={form.andamento || ""} onChange={val => setF("andamento", val)} placeholder="Ex: pág. 120 ou 45%" />
-              <Input label="Editora" value={form.editora || ""} onChange={val => setF("editora", val)} />
-              <Input label="Data início" type="date" value={form.data_inicio || ""} onChange={val => setF("data_inicio", val)} />
-              <Input label="Data fim" type="date" value={form.data_fim || ""} onChange={val => setF("data_fim", val)} />
-              <Input label="Nacionalidade do autor" value={form.nacionalidade_autor || ""} onChange={val => setF("nacionalidade_autor", val)} />
-              <Input label="Projetos (separar por vírgula)" value={(form.projetos || []).join(", ")} onChange={val => setF("projetos", val.split(",").map(s => s.trim()).filter(Boolean))} placeholder="Ex: Graduação, TCC" />
-            </div>
-            <Textarea label="Avaliação pessoal" value={form.avaliacao || ""} onChange={val => setF("avaliacao", val)} />
-            <div>
-              <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-1">Anotações de leitura</label>
-              <RichEditor content={form.anotacoes_html || ""} onChange={v => setF("anotacoes_html", v)} placeholder="Suas anotações..." minHeight="150px" />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
+            {/* ─── TAB: INFO ─── */}
+            {activeTab === "info" && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-2">Capa do livro</label>
+                  <div className="flex items-center gap-4">
+                    {form.capa_base64 ? (
+                      <div className="relative w-20 h-28 rounded-lg overflow-hidden border border-[var(--border-subtle)]">
+                        <img src={form.capa_base64} alt="Capa" className="w-full h-full object-cover" />
+                        <button type="button" onClick={() => setF("capa_base64", "")}
+                          className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-[var(--bg-card)] border border-[var(--border-subtle)] flex items-center justify-center hover:bg-[var(--red-bg)]">
+                          <X size={10} className="text-[var(--text-tertiary)]" />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="w-20 h-28 rounded-lg border-2 border-dashed border-[var(--border-subtle)] hover:border-[var(--orange-500)] flex flex-col items-center justify-center cursor-pointer transition-colors">
+                        <ImagePlus size={18} className="text-[var(--text-tertiary)] mb-1" />
+                        <span className="font-dm text-[10px] text-[var(--text-tertiary)]">Upload</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 500_000) { alert("Imagem muito grande (máx. 500KB)"); return; }
+                          const reader = new FileReader();
+                          reader.onload = (ev) => setF("capa_base64", ev.target?.result as string);
+                          reader.readAsDataURL(file);
+                        }} />
+                      </label>
+                    )}
+                    <p className="font-dm text-[10px] text-[var(--text-tertiary)]">Formato vertical, máx. 500KB</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Input label="Título *" value={form.titulo || ""} onChange={val => setF("titulo", val)} />
+                  <Input label="Autor(es)" value={form.autores || ""} onChange={val => setF("autores", val)} />
+                  <Input label="Gênero/Área" value={form.genero || ""} onChange={val => setF("genero", val)} placeholder="Ex: Psicanálise, TCC" />
+                  <Select label="Formato" value={form.formato || "fisico"} onChange={val => setF("formato", val)} options={[
+                    { value: "fisico", label: "Físico" },
+                    { value: "digital", label: "Digital" },
+                    { value: "audiobook", label: "Audiobook" },
+                  ]} />
+                  <Select label="Status" value={form.status || "quero_ler"} onChange={val => setF("status", val)} options={[
+                    { value: "quero_ler", label: "Quero ler" },
+                    { value: "em_progresso", label: "Em progresso" },
+                    { value: "lido", label: "Lido" },
+                    { value: "abandonado", label: "Abandonado" },
+                  ]} />
+                  <Input label="Páginas" type="number" value={String(form.num_paginas ?? "")} onChange={val => setF("num_paginas", val ? Number(val) : null)} />
+                  <Input label="Andamento" value={form.andamento || ""} onChange={val => setF("andamento", val)} placeholder="Ex: pág. 120 ou 45%" />
+                  <Input label="Editora" value={form.editora || ""} onChange={val => setF("editora", val)} />
+                  <Input label="Data início" type="date" value={form.data_inicio || ""} onChange={val => setF("data_inicio", val)} />
+                  <Input label="Data fim" type="date" value={form.data_fim || ""} onChange={val => setF("data_fim", val)} />
+                  <Input label="Nacionalidade do autor" value={form.nacionalidade_autor || ""} onChange={val => setF("nacionalidade_autor", val)} />
+                  <Input label="Projetos (separar por vírgula)" value={(form.projetos || []).join(", ")} onChange={val => setF("projetos", val.split(",").map(s => s.trim()).filter(Boolean))} placeholder="Ex: Graduação, TCC" />
+                </div>
+                <Textarea label="Avaliação pessoal" value={form.avaliacao || ""} onChange={val => setF("avaliacao", val)} />
+              </div>
+            )}
+
+            {/* ─── TAB: CAPÍTULOS ─── */}
+            {activeTab === "capitulos" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-dm text-sm font-medium text-[var(--text-primary)]">
+                      Capítulos do livro
+                    </p>
+                    {capitulos.length > 0 && (
+                      <p className="font-dm text-xs text-[var(--text-tertiary)]">
+                        {capsDone}/{capitulos.length} lidos
+                      </p>
+                    )}
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={addCapitulo}>
+                    <Plus size={14} /> Capítulo
+                  </Button>
+                </div>
+
+                {capitulos.length > 0 && (
+                  <div className="w-full h-2 rounded-full bg-[var(--bg-hover)] overflow-hidden">
+                    <div className="h-full rounded-full bg-[#10b981] transition-all" style={{ width: `${capitulos.length > 0 ? (capsDone / capitulos.length) * 100 : 0}%` }} />
+                  </div>
+                )}
+
+                {capitulos.length === 0 ? (
+                  <div className="py-8 text-center">
+                    <ListChecks size={32} className="mx-auto text-[var(--text-tertiary)] mb-2 opacity-50" />
+                    <p className="font-dm text-sm text-[var(--text-tertiary)]">Nenhum capítulo adicionado</p>
+                    <p className="font-dm text-xs text-[var(--text-tertiary)] mt-1">Adicione capítulos para acompanhar seu progresso</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {capitulos.map((cap, idx) => (
+                      <CapituloRow
+                        key={cap.id}
+                        cap={cap}
+                        index={idx}
+                        onToggle={() => toggleCapituloLido(cap.id)}
+                        onUpdate={(data) => updateCapitulo(cap.id, data)}
+                        onRemove={() => removeCapitulo(cap.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {capitulos.length > 3 && (
+                  <Button variant="secondary" size="sm" onClick={addCapitulo} className="w-full">
+                    <Plus size={14} /> Adicionar capítulo
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* ─── TAB: TAREFAS ─── */}
+            {activeTab === "tarefas" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-dm text-sm font-medium text-[var(--text-primary)]">
+                      Tarefas do livro
+                    </p>
+                    {tarefas.length > 0 && (
+                      <p className="font-dm text-xs text-[var(--text-tertiary)]">
+                        {tarefas.filter(t => t.status === "concluida").length}/{tarefas.length} concluídas
+                      </p>
+                    )}
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={addTarefa}>
+                    <Plus size={14} /> Tarefa
+                  </Button>
+                </div>
+
+                {tarefas.length === 0 ? (
+                  <div className="py-8 text-center">
+                    <CheckSquare size={32} className="mx-auto text-[var(--text-tertiary)] mb-2 opacity-50" />
+                    <p className="font-dm text-sm text-[var(--text-tertiary)]">Nenhuma tarefa criada</p>
+                    <p className="font-dm text-xs text-[var(--text-tertiary)] mt-1">Crie tarefas como fichamentos, resumos ou apresentações</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {tarefas.map(t => (
+                      <div key={t.id}
+                        className="flex items-center gap-3 p-3 rounded-xl transition-colors"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--border-subtle)" }}
+                      >
+                        <button onClick={() => cycleTaskStatus(t.id)} className="shrink-0 hover:scale-110 transition-transform" title="Alterar status">
+                          {TASK_STATUS_ICONS[t.status]}
+                        </button>
+                        <div className="flex-1 min-w-0">
+                          <input
+                            value={t.titulo}
+                            onChange={e => updateTarefa(t.id, { titulo: e.target.value })}
+                            placeholder="Descreva a tarefa..."
+                            className={`w-full bg-transparent text-sm font-dm outline-none ${
+                              t.status === "concluida" ? "line-through text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
+                            }`}
+                          />
+                          <div className="flex items-center gap-2 mt-1">
+                            <input
+                              type="date"
+                              value={t.prazo}
+                              onChange={e => updateTarefa(t.id, { prazo: e.target.value })}
+                              className="bg-transparent text-[10px] font-dm text-[var(--text-tertiary)] outline-none"
+                            />
+                            <span className={`text-[10px] font-dm font-medium ${
+                              t.status === "concluida" ? "text-[#10b981]" :
+                              t.status === "em_andamento" ? "text-[#3b82f6]" :
+                              "text-[var(--text-tertiary)]"
+                            }`}>
+                              {t.status === "concluida" ? "Concluída" : t.status === "em_andamento" ? "Em andamento" : "Pendente"}
+                            </span>
+                          </div>
+                        </div>
+                        <button onClick={() => removeTarefa(t.id)} className="shrink-0 p-1 rounded hover:bg-[var(--bg-hover)] transition-colors">
+                          <X size={14} className="text-[var(--text-tertiary)]" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {tarefas.length > 3 && (
+                  <Button variant="secondary" size="sm" onClick={addTarefa} className="w-full">
+                    <Plus size={14} /> Adicionar tarefa
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* ─── TAB: NOTAS ─── */}
+            {activeTab === "notas" && (
+              <div>
+                <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-1">Anotações de leitura</label>
+                <RichEditor content={form.anotacoes_html || ""} onChange={v => setF("anotacoes_html", v)} placeholder="Suas anotações, citações, reflexões..." minHeight="250px" />
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border-subtle)]">
               {editing && (
                 <Button variant="danger" onClick={() => { deleteBibliotecaItem(editing.id); setShowForm(false); refresh(); toast("Livro excluído", { type: "info" }); }}>
                   <Trash2 size={14} /> Excluir
@@ -334,5 +590,82 @@ export default function BibliotecaPage() {
         </Modal>
       </div>
     </Shell>
+  );
+}
+
+// ─── Capítulo Row Component ───
+function CapituloRow({ cap, index, onToggle, onUpdate, onRemove }: {
+  cap: CapituloLivro; index: number;
+  onToggle: () => void; onUpdate: (data: Partial<CapituloLivro>) => void; onRemove: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div
+      className="rounded-xl transition-colors overflow-hidden"
+      style={{ background: "var(--bg-input)", border: "1px solid var(--border-subtle)" }}
+    >
+      <div className="flex items-center gap-3 p-3">
+        <button onClick={onToggle} className="shrink-0 hover:scale-110 transition-transform">
+          {cap.lido
+            ? <CheckSquare size={18} className="text-[#10b981]" />
+            : <Square size={18} className="text-[var(--text-tertiary)]" />
+          }
+        </button>
+        <div className="flex-1 min-w-0">
+          <input
+            value={cap.titulo}
+            onChange={e => onUpdate({ titulo: e.target.value })}
+            placeholder={`Capítulo ${index + 1}`}
+            className={`w-full bg-transparent text-sm font-dm outline-none ${
+              cap.lido ? "line-through text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
+            }`}
+          />
+          <div className="flex items-center gap-2 mt-0.5">
+            {(cap.pagina_inicio || cap.pagina_fim) && (
+              <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
+                pág. {cap.pagina_inicio || "?"} – {cap.pagina_fim || "?"}
+              </span>
+            )}
+            {cap.anotacoes && (
+              <span className="font-dm text-[10px] text-[var(--orange-500)]">com anotações</span>
+            )}
+          </div>
+        </div>
+        <button onClick={() => setExpanded(!expanded)} className="shrink-0 p-1 rounded hover:bg-[var(--bg-hover)] transition-colors">
+          {expanded ? <ChevronDown size={14} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={14} className="text-[var(--text-tertiary)]" />}
+        </button>
+        <button onClick={onRemove} className="shrink-0 p-1 rounded hover:bg-[var(--bg-hover)] transition-colors">
+          <X size={14} className="text-[var(--text-tertiary)]" />
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="px-3 pb-3 space-y-2 border-t border-[var(--border-subtle)] pt-2 ml-9">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="font-dm text-[10px] text-[var(--text-tertiary)]">Pág. início</label>
+              <input type="number" value={cap.pagina_inicio ?? ""} onChange={e => onUpdate({ pagina_inicio: e.target.value ? Number(e.target.value) : null })}
+                className="input-hamilton w-full text-xs py-1.5" />
+            </div>
+            <div>
+              <label className="font-dm text-[10px] text-[var(--text-tertiary)]">Pág. fim</label>
+              <input type="number" value={cap.pagina_fim ?? ""} onChange={e => onUpdate({ pagina_fim: e.target.value ? Number(e.target.value) : null })}
+                className="input-hamilton w-full text-xs py-1.5" />
+            </div>
+          </div>
+          <div>
+            <label className="font-dm text-[10px] text-[var(--text-tertiary)]">Anotações do capítulo</label>
+            <textarea
+              value={cap.anotacoes}
+              onChange={e => onUpdate({ anotacoes: e.target.value })}
+              placeholder="Pontos importantes, citações..."
+              rows={3}
+              className="input-hamilton w-full text-xs py-1.5 resize-none"
+            />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

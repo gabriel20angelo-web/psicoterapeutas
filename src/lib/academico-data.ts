@@ -293,7 +293,11 @@ export function calcularFrequencia(disciplinaId: string): FrequenciaResumo {
 // ═══════════════════════════════════════════════════
 
 export function getBiblioteca(): BibliotecaItem[] {
-  return load<BibliotecaItem>(KEYS.biblioteca, []);
+  return load<BibliotecaItem>(KEYS.biblioteca, []).map(b => ({
+    ...b,
+    capitulos: b.capitulos || [],
+    tarefas_livro: b.tarefas_livro || [],
+  }));
 }
 
 export function getBibliotecaItem(id: string): BibliotecaItem | undefined {

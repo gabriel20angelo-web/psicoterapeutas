@@ -109,6 +109,31 @@ export interface Frequencia {
   created_at: string;
 }
 
+export interface CapituloLivro {
+  id: string;
+  titulo: string;
+  pagina_inicio: number | null;
+  pagina_fim: number | null;
+  lido: boolean;
+  anotacoes: string;
+}
+
+export type StatusTarefaLivro = "pendente" | "em_andamento" | "concluida";
+
+export interface TarefaLivro {
+  id: string;
+  titulo: string;
+  status: StatusTarefaLivro;
+  prazo: string; // YYYY-MM-DD
+  created_at: string;
+}
+
+export const LABEL_STATUS_TAREFA_LIVRO: Record<StatusTarefaLivro, string> = {
+  pendente: "Pendente",
+  em_andamento: "Em andamento",
+  concluida: "Concluída",
+};
+
 export interface BibliotecaItem {
   id: string;
   titulo: string;
@@ -127,6 +152,8 @@ export interface BibliotecaItem {
   nacionalidade_autor: string;
   anotacoes_html: string;
   capa_base64: string; // data URL da capa do livro (vertical)
+  capitulos: CapituloLivro[];
+  tarefas_livro: TarefaLivro[];
   created_at: string;
   updated_at: string;
 }
