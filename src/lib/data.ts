@@ -5,7 +5,6 @@ import type {
 import { supabase } from './supabase';
 import { isWithinInterval, parseISO } from 'date-fns';
 import { createPatientVaultFolder } from './notes';
-import { getTarefasLivrosComPrazo } from './academico-data';
 
 // ─── LOCAL STORAGE FALLBACK ───
 function loadLocal<T>(key: string): T[] {
@@ -289,6 +288,7 @@ export function getAtividades(dateRange?: { start: Date; end: Date }): Atividade
 
   // Inject book tasks with deadlines as virtual agenda activities
   try {
+    const { getTarefasLivrosComPrazo } = require('./academico-data');
     const bookTasks = getTarefasLivrosComPrazo();
     for (const { tarefa, livro } of bookTasks) {
       if (tarefa.prazo) {
