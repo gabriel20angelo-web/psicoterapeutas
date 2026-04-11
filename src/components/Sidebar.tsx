@@ -3,10 +3,10 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   CalendarDays, Users, LayoutDashboard,
-  Menu, FileText, X, BookOpen, Sparkles, Flame, Settings2, GraduationCap,
+  FileText, BookOpen, Sparkles, Flame, Settings2, GraduationCap,
 } from "lucide-react";
 
 interface NavItem {
@@ -37,7 +37,6 @@ function getFilteredNav(): NavItem[] {
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [NAV] = useState(() => getFilteredNav());
 
   const isActive = (href: string) =>
@@ -45,83 +44,6 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile toggle */}
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="fixed top-4 left-4 z-50 lg:hidden w-10 h-10 rounded-xl flex items-center justify-center bg-[var(--bg-card)] shadow-[var(--shadow-card)] border border-[var(--border-default)]"
-        aria-label="Abrir menu"
-      >
-        <Menu size={20} className="text-[var(--text-primary)]" />
-      </button>
-
-      {/* Mobile overlay */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <motion.div key="overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={() => setMobileOpen(false)} className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm lg:hidden" />
-        )}
-      </AnimatePresence>
-
-      {/* Mobile drawer (260px) */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <motion.aside
-            key="mobile-sidebar"
-            initial={{ x: "-100%" }}
-            animate={{ x: 0 }}
-            exit={{ x: "-100%" }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="fixed inset-y-0 left-0 z-[70] w-[260px] lg:hidden flex flex-col bg-[var(--bg-card)] border-r border-[var(--border-default)]"
-          >
-            <div className="flex items-center justify-between p-5 pb-2">
-              <div className="flex items-center gap-2.5">
-                <Image src="/icon-allos.png" alt="App" width={36} height={36} className="rounded-lg" />
-                <div>
-                  <p className="font-fraunces font-bold text-[15px] text-[var(--text-primary)]">Meu</p>
-                  <p className="font-dm text-[10px] tracking-[.28em] text-[var(--text-tertiary)] uppercase -mt-0.5">Consultório</p>
-                </div>
-              </div>
-              <button onClick={() => setMobileOpen(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[var(--bg-hover)] transition-colors">
-                <X size={18} className="text-[var(--text-tertiary)]" />
-              </button>
-            </div>
-
-            <nav className="flex flex-col gap-0.5 flex-1 px-3 py-4">
-              {NAV.map((item) => {
-                const active = isActive(item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileOpen(false)}
-                    {...(active ? { "aria-current": "page" as const } : {})}
-                    className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl font-dm text-sm font-medium transition-all duration-200 ${
-                      active
-                        ? "text-[var(--orange-500)] bg-[var(--orange-glow)]"
-                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-                    }`}
-                  >
-                    <item.icon size={22} strokeWidth={active ? 2 : 1.5} />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
-            </nav>
-
-            <div className="p-4 border-t border-[var(--border-subtle)]">
-              <Link href="/configuracoes" onClick={() => setMobileOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-dm text-sm font-medium transition-all duration-200 ${
-                  isActive("/configuracoes")
-                    ? "text-[var(--orange-500)] bg-[var(--orange-glow)]"
-                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-                }`}>
-                <Settings2 size={22} /> Configurações
-              </Link>
-            </div>
-          </motion.aside>
-        )}
-      </AnimatePresence>
-
       {/* Desktop sidebar — 68px icon bar */}
       <aside
         className="hidden lg:flex flex-col fixed top-[56px] bottom-0 left-0 z-[40] w-[68px] glass border-r border-[var(--border-subtle)]"
@@ -131,7 +53,7 @@ export default function Sidebar() {
         <div className="flex items-center justify-center py-4">
           <Link href="/" className="relative group">
             <Image
-              src="/icon-allos.png"
+              src="/psicoterapeutas/icon-allos.png"
               alt="App"
               width={40}
               height={40}

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 import BackgroundEffects from "./BackgroundEffects";
+import BottomNav from "./BottomNav";
 import { initializeData, isDataReady } from "@/lib/data";
 
 const FIXED_USER_ID = process.env.NEXT_PUBLIC_USER_ID || "00000000-0000-0000-0000-000000000001";
@@ -116,6 +117,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </main>
+      <BottomNav />
       <ShortcutsHelpModal open={showShortcuts} onClose={() => setShowShortcuts(false)} />
     </div>
   );
