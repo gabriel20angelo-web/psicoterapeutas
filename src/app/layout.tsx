@@ -32,7 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/psicoterapeutas/icon-512.png" />
         <link rel="manifest" href="/psicoterapeutas/manifest.json" />
         <meta name="theme-color" content="#ea580c" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <script dangerouslySetInnerHTML={{ __html: `try{const t=localStorage.getItem('allos-theme');if(t==='dark')document.documentElement.classList.add('dark')}catch(e){}` }} />
         <script dangerouslySetInnerHTML={{ __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/psicoterapeutas/sw.js')}` }} />

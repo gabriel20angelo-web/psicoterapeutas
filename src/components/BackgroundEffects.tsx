@@ -271,7 +271,7 @@ function PatternOverlay({ isDark }: { isDark: boolean }) {
       className="fixed inset-0 pointer-events-none z-0"
       aria-hidden="true"
       style={{
-        backgroundImage: isDark ? "url('/padronagem-icons.png')" : "url('/padronagem-red.png')",
+        backgroundImage: isDark ? "url('/psicoterapeutas/padronagem-icons.png')" : "url('/psicoterapeutas/padronagem-red.png')",
         backgroundRepeat: "repeat",
         backgroundSize: "200px auto",
         opacity: isDark ? 0.04 : 0.08,

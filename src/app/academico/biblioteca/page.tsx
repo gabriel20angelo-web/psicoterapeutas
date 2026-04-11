@@ -66,6 +66,9 @@ export default function BibliotecaPage() {
   const disciplinas = getDisciplinas();
   const [filterDisciplina, setFilterDisciplina] = useState("");
 
+  // Status groups used for progress calculation
+  const concluidos = new Set<string>(["lido_rapido", "lido", "lido_resumido", "lido_resumido_mapa"]);
+
   let filtered = allBooks;
   if (search) {
     const q = search.toLowerCase();
@@ -236,7 +239,6 @@ export default function BibliotecaPage() {
   lidosAno.forEach(b => { if (b.genero) generos.set(b.genero, (generos.get(b.genero) || 0) + 1); });
 
   // Capítulos stats for card
-  const concluidos = new Set(["lido_rapido", "lido", "lido_resumido", "lido_resumido_mapa"]);
   const getCapProgress = (b: BibliotecaItem) => {
     const caps = b.capitulos || [];
     if (caps.length === 0) return null;
