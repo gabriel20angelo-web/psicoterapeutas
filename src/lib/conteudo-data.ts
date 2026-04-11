@@ -1,5 +1,7 @@
 // ─── Produção de Conteúdo para Redes Sociais ───
 
+import { syncSave, syncLoad, initSync } from "./sync";
+
 // ─── TYPES ───
 
 export type Plataforma = "instagram" | "tiktok" | "youtube" | "linkedin" | "twitter";
@@ -166,6 +168,13 @@ const STORAGE_REFERENCIAS = "allos-conteudo-referencias";
 const STORAGE_STORIES = "allos-conteudo-stories";
 const CHAT_KEY = "allos-conteudo-chat";
 
+const ALL_CONTEUDO_KEYS = [STORAGE_PROJETOS, STORAGE_ROTEIROS, STORAGE_REFERENCIAS, STORAGE_STORIES, CHAT_KEY];
+
+/** Initialize sync for Conteudo keys. */
+export function initConteudoSync(): Promise<void> {
+  return initSync(ALL_CONTEUDO_KEYS);
+}
+
 // ─── MOCK DATA — PROJETOS ───
 
 const MOCK_PROJETOS: Projeto[] = [];
@@ -311,8 +320,8 @@ export function getProjetos(filters?: { status?: StatusProjeto; plataforma?: Pla
     projetos = MOCK_PROJETOS;
   } else {
     try {
-      const stored = localStorage.getItem(STORAGE_PROJETOS);
-      projetos = stored ? JSON.parse(stored) : MOCK_PROJETOS;
+      const stored = syncLoad(STORAGE_PROJETOS, null);
+      projetos = stored ? stored : MOCK_PROJETOS;
     } catch {
       projetos = MOCK_PROJETOS;
     }
@@ -328,7 +337,7 @@ export function getProjetos(filters?: { status?: StatusProjeto; plataforma?: Pla
 }
 
 function saveProjetos(projetos: Projeto[]) {
-  localStorage.setItem(STORAGE_PROJETOS, JSON.stringify(projetos));
+  syncSave(STORAGE_PROJETOS, projetos);
 }
 
 export function createProjeto(data: Omit<Projeto, "id" | "data_criacao">): Projeto {
@@ -362,15 +371,15 @@ export function deleteProjeto(id: string) {
 function getAllRoteiros(): Roteiro[] {
   if (typeof window === "undefined") return MOCK_ROTEIROS;
   try {
-    const stored = localStorage.getItem(STORAGE_ROTEIROS);
-    return stored ? JSON.parse(stored) : MOCK_ROTEIROS;
+    const stored = syncLoad(STORAGE_ROTEIROS, null);
+    return stored ? stored : MOCK_ROTEIROS;
   } catch {
     return MOCK_ROTEIROS;
   }
 }
 
 function saveAllRoteiros(roteiros: Roteiro[]) {
-  localStorage.setItem(STORAGE_ROTEIROS, JSON.stringify(roteiros));
+  syncSave(STORAGE_ROTEIROS, roteiros);
 }
 
 export function getRoteiro(projetoId: string): Roteiro | undefined {
@@ -398,8 +407,8 @@ export function getReferencias(filters?: { tipo?: TipoReferencia; plataforma?: P
     referencias = MOCK_REFERENCIAS;
   } else {
     try {
-      const stored = localStorage.getItem(STORAGE_REFERENCIAS);
-      referencias = stored ? JSON.parse(stored) : MOCK_REFERENCIAS;
+      const stored = syncLoad(STORAGE_REFERENCIAS, null);
+      referencias = stored ? stored : MOCK_REFERENCIAS;
     } catch {
       referencias = MOCK_REFERENCIAS;
     }
@@ -414,7 +423,7 @@ export function getReferencias(filters?: { tipo?: TipoReferencia; plataforma?: P
 }
 
 function saveReferencias(referencias: Referencia[]) {
-  localStorage.setItem(STORAGE_REFERENCIAS, JSON.stringify(referencias));
+  syncSave(STORAGE_REFERENCIAS, referencias);
 }
 
 export function createReferencia(data: Omit<Referencia, "id" | "data_criacao">): Referencia {
@@ -455,15 +464,15 @@ export function linkReferencia(referenciaId: string, projetoId: string) {
 export function getStoriesSequencias(): StoriesSequencia[] {
   if (typeof window === "undefined") return MOCK_STORIES;
   try {
-    const stored = localStorage.getItem(STORAGE_STORIES);
-    return stored ? JSON.parse(stored) : MOCK_STORIES;
+    const stored = syncLoad(STORAGE_STORIES, null);
+    return stored ? stored : MOCK_STORIES;
   } catch {
     return MOCK_STORIES;
   }
 }
 
 function saveStoriesSequencias(stories: StoriesSequencia[]) {
-  localStorage.setItem(STORAGE_STORIES, JSON.stringify(stories));
+  syncSave(STORAGE_STORIES, stories);
 }
 
 export function createStoriesSequencia(data: Omit<StoriesSequencia, "id" | "data_criacao">): StoriesSequencia {
@@ -494,8 +503,8 @@ export function getTemplates(): TemplateConteudo[] {
 export function getChatMessages(): RoteiroMensagem[] {
   if (typeof window === "undefined") return MOCK_CHAT;
   try {
-    const stored = localStorage.getItem(CHAT_KEY);
-    return stored ? JSON.parse(stored) : MOCK_CHAT;
+    const stored = syncLoad(CHAT_KEY, null);
+    return stored ? stored : MOCK_CHAT;
   } catch {
     return MOCK_CHAT;
   }
@@ -520,7 +529,7 @@ export function sendChatMessage(content: string): RoteiroMensagem[] {
   };
   msgs.push(botMsg);
 
-  localStorage.setItem(CHAT_KEY, JSON.stringify(msgs));
+  syncSave(CHAT_KEY, msgs);
   return msgs;
 }
 

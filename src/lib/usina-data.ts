@@ -1,7 +1,9 @@
 // ═══════════════════════════════════════════════════
 // USINA — Sistema de Autogestão de Produção de Conteúdo
-// Data Layer (localStorage com fallback mock)
+// Data Layer (synced via Supabase kv_store)
 // ═══════════════════════════════════════════════════
+
+import { syncSave, syncLoad, initSync } from "./sync";
 
 // ─── TYPES ───
 
@@ -149,18 +151,19 @@ const SEED_METAS: Meta[] = [];
 
 const SEED_RASCUNHOS: RascunhoRapido[] = [];
 
-// ─── GENERIC STORAGE HELPERS ───
+/** Initialize sync for Usina keys. */
+export function initUsinaSync(): Promise<void> {
+  return initSync(Object.values(KEYS));
+}
+
+// ─── GENERIC STORAGE HELPERS (synced) ───
 
 function load<T>(key: string, seed: T[]): T[] {
-  if (typeof window === "undefined") return seed;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : seed;
-  } catch { return seed; }
+  return syncLoad<T[]>(key, seed);
 }
 
 function save<T>(key: string, data: T[]) {
-  localStorage.setItem(key, JSON.stringify(data));
+  syncSave(key, data);
 }
 
 function uid(): string { return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`; }

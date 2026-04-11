@@ -7,6 +7,10 @@ import Header from "./Header";
 import BackgroundEffects from "./BackgroundEffects";
 import BottomNav from "./BottomNav";
 import { initializeData, isDataReady } from "@/lib/data";
+import { initAcademicoSync } from "@/lib/academico-data";
+import { initForjaSync } from "@/lib/forja-data";
+import { initUsinaSync } from "@/lib/usina-data";
+import { initConteudoSync } from "@/lib/conteudo-data";
 
 const FIXED_USER_ID = process.env.NEXT_PUBLIC_USER_ID || "00000000-0000-0000-0000-000000000001";
 
@@ -72,7 +76,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [dataReady, setDataReady] = useState(false);
 
   useEffect(() => {
-    initializeData(FIXED_USER_ID).then(() => setDataReady(true)).catch(() => setDataReady(true));
+    Promise.all([
+      initializeData(FIXED_USER_ID),
+      initAcademicoSync(),
+      initForjaSync(),
+      initUsinaSync(),
+      initConteudoSync(),
+    ]).then(() => setDataReady(true)).catch(() => setDataReady(true));
   }, []);
 
   const handleGlobalKeydown = useCallback(

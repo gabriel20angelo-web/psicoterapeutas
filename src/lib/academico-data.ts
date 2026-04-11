@@ -19,6 +19,7 @@ import type {
   ConfigAcademica, FrequenciaResumo,
 } from "@/types/academico";
 import { DEFAULT_CONFIG_ACADEMICA } from "@/types/academico";
+import { syncSave, syncLoad, initSync } from "./sync";
 
 // ─── STORAGE KEYS ───
 
@@ -37,26 +38,23 @@ const KEYS = {
   config:           "ac:config",
 };
 
-// ─── GENERIC STORAGE HELPERS ───
+/** Initialize sync for all academic keys. Call once on app load. */
+export function initAcademicoSync(): Promise<void> {
+  return initSync(Object.values(KEYS));
+}
+
+// ─── GENERIC STORAGE HELPERS (synced) ───
 
 function load<T>(key: string, seed: T[]): T[] {
-  if (typeof window === "undefined") return seed;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : seed;
-  } catch { return seed; }
+  return syncLoad<T[]>(key, seed);
 }
 
 function loadSingle<T>(key: string, seed: T): T {
-  if (typeof window === "undefined") return seed;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : seed;
-  } catch { return seed; }
+  return syncLoad<T>(key, seed);
 }
 
 function save<T>(key: string, data: T) {
-  localStorage.setItem(key, JSON.stringify(data));
+  syncSave(key, data);
 }
 
 function uid(): string { return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`; }

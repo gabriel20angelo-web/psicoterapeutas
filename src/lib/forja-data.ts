@@ -1,7 +1,9 @@
 // ═══════════════════════════════════════════════════
 // FORJA — Pomodoro & Productivity System
-// Data Layer (localStorage com fallback mock)
+// Data Layer (synced via Supabase kv_store)
 // ═══════════════════════════════════════════════════
+
+import { syncSave, syncLoad, initSync } from "./sync";
 
 // ─── TYPES ───
 
@@ -140,26 +142,23 @@ const KEYS = {
   meta_diaria:  "forja-meta-diaria",
 };
 
-// ─── GENERIC STORAGE HELPERS ───
+/** Initialize sync for Forja keys. */
+export function initForjaSync(): Promise<void> {
+  return initSync(Object.values(KEYS));
+}
+
+// ─── GENERIC STORAGE HELPERS (synced) ───
 
 function load<T>(key: string, seed: T[]): T[] {
-  if (typeof window === "undefined") return seed;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : seed;
-  } catch { return seed; }
+  return syncLoad<T[]>(key, seed);
 }
 
 function loadSingle<T>(key: string, seed: T): T {
-  if (typeof window === "undefined") return seed;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : seed;
-  } catch { return seed; }
+  return syncLoad<T>(key, seed);
 }
 
 function save<T>(key: string, data: T) {
-  localStorage.setItem(key, JSON.stringify(data));
+  syncSave(key, data);
 }
 
 export function uid(): string { return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`; }
