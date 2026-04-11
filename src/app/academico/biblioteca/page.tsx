@@ -21,8 +21,8 @@ import {
   getBiblioteca, createBibliotecaItem, updateBibliotecaItem, deleteBibliotecaItem,
   getProgressoLeitura,
 } from "@/lib/academico-data";
-import type { BibliotecaItem, BibliotecaInput, StatusLeitura, FormatoLeitura, CapituloLivro, TarefaLivro, StatusTarefaLivro } from "@/types/academico";
-import { LABEL_STATUS_LEITURA, LABEL_FORMATO_LEITURA } from "@/types/academico";
+import type { BibliotecaItem, BibliotecaInput, StatusLeitura, FormatoLeitura, CapituloLivro, TarefaLivro, StatusTarefaLivro, StatusLeituraCapitulo, SubtarefaLivro } from "@/types/academico";
+import { LABEL_STATUS_LEITURA, LABEL_FORMATO_LEITURA, LABEL_STATUS_LEITURA_CAPITULO } from "@/types/academico";
 
 const STATUS_COLORS: Record<StatusLeitura, { bg: string; text: string }> = {
   quero_ler:    { bg: "var(--bg-hover)", text: "var(--text-secondary)" },
@@ -134,7 +134,7 @@ export default function BibliotecaPage() {
   const addCapitulo = () => {
     setCapitulos(prev => [...prev, {
       id: `cap-${uid()}`, titulo: "", pagina_inicio: null, pagina_fim: null,
-      lido: false, anotacoes: "",
+      status_leitura: "nao_lido" as StatusLeituraCapitulo, anotacoes: "", ordem: prev.length,
     }]);
   };
 
@@ -143,18 +143,33 @@ export default function BibliotecaPage() {
   };
 
   const removeCapitulo = (id: string) => {
-    setCapitulos(prev => prev.filter(c => c.id !== id));
+    setCapitulos(prev => prev.filter(c => c.id !== id).map((c, i) => ({ ...c, ordem: i })));
   };
 
-  const toggleCapituloLido = (id: string) => {
-    setCapitulos(prev => prev.map(c => c.id === id ? { ...c, lido: !c.lido } : c));
+  const cycleCapituloStatus = (id: string) => {
+    const order: StatusLeituraCapitulo[] = ["nao_lido", "lido_dinamico", "lido", "lido_resumido"];
+    setCapitulos(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      const idx = order.indexOf(c.status_leitura || "nao_lido");
+      return { ...c, status_leitura: order[(idx + 1) % order.length] };
+    }));
+  };
+
+  const moveCapitulo = (idx: number, dir: -1 | 1) => {
+    const target = idx + dir;
+    if (target < 0 || target >= capitulos.length) return;
+    setCapitulos(prev => {
+      const arr = [...prev];
+      [arr[idx], arr[target]] = [arr[target], arr[idx]];
+      return arr.map((c, i) => ({ ...c, ordem: i }));
+    });
   };
 
   // ─── Tarefas helpers ───
   const addTarefa = () => {
     setTarefas(prev => [...prev, {
       id: `tl-${uid()}`, titulo: "", status: "pendente" as StatusTarefaLivro,
-      prazo: "", created_at: new Date().toISOString(),
+      prazo: "", subtarefas: [], created_at: new Date().toISOString(),
     }]);
   };
 
@@ -175,6 +190,27 @@ export default function BibliotecaPage() {
     }));
   };
 
+  const addSubtarefa = (tarefaId: string) => {
+    setTarefas(prev => prev.map(t => {
+      if (t.id !== tarefaId) return t;
+      return { ...t, subtarefas: [...(t.subtarefas || []), { id: `st-${uid()}`, titulo: "", concluida: false }] };
+    }));
+  };
+
+  const updateSubtarefa = (tarefaId: string, subId: string, data: Partial<SubtarefaLivro>) => {
+    setTarefas(prev => prev.map(t => {
+      if (t.id !== tarefaId) return t;
+      return { ...t, subtarefas: (t.subtarefas || []).map(s => s.id === subId ? { ...s, ...data } : s) };
+    }));
+  };
+
+  const removeSubtarefa = (tarefaId: string, subId: string) => {
+    setTarefas(prev => prev.map(t => {
+      if (t.id !== tarefaId) return t;
+      return { ...t, subtarefas: (t.subtarefas || []).filter(s => s.id !== subId) };
+    }));
+  };
+
   // Stats
   const lidos = allBooks.filter(b => b.status === "lido");
   const lidosAno = lidos.filter(b => b.ano_leitura === currentYear);
@@ -185,7 +221,7 @@ export default function BibliotecaPage() {
   const getCapProgress = (b: BibliotecaItem) => {
     const caps = b.capitulos || [];
     if (caps.length === 0) return null;
-    const done = caps.filter(c => c.lido).length;
+    const done = caps.filter(c => c.status_leitura && c.status_leitura !== "nao_lido").length;
     return { done, total: caps.length };
   };
 
@@ -196,7 +232,7 @@ export default function BibliotecaPage() {
     { key: "notas", label: "Notas", icon: <GripVertical size={14} /> },
   ];
 
-  const capsDone = capitulos.filter(c => c.lido).length;
+  const capsDone = capitulos.filter(c => c.status_leitura && c.status_leitura !== "nao_lido").length;
 
   return (
     <Shell>
@@ -475,9 +511,11 @@ export default function BibliotecaPage() {
                         key={cap.id}
                         cap={cap}
                         index={idx}
-                        onToggle={() => toggleCapituloLido(cap.id)}
+                        total={capitulos.length}
+                        onCycleStatus={() => cycleCapituloStatus(cap.id)}
                         onUpdate={(data) => updateCapitulo(cap.id, data)}
                         onRemove={() => removeCapitulo(cap.id)}
+                        onMove={(dir) => moveCapitulo(idx, dir)}
                       />
                     ))}
                   </div>
@@ -520,40 +558,76 @@ export default function BibliotecaPage() {
                   <div className="space-y-2">
                     {tarefas.map(t => (
                       <div key={t.id}
-                        className="flex items-center gap-3 p-3 rounded-xl transition-colors"
+                        className="rounded-xl overflow-hidden transition-colors"
                         style={{ background: "var(--bg-input)", border: "1px solid var(--border-subtle)" }}
                       >
-                        <button onClick={() => cycleTaskStatus(t.id)} className="shrink-0 hover:scale-110 transition-transform" title="Alterar status">
-                          {TASK_STATUS_ICONS[t.status]}
-                        </button>
-                        <div className="flex-1 min-w-0">
-                          <input
-                            value={t.titulo}
-                            onChange={e => updateTarefa(t.id, { titulo: e.target.value })}
-                            placeholder="Descreva a tarefa..."
-                            className={`w-full bg-transparent text-sm font-dm outline-none ${
-                              t.status === "concluida" ? "line-through text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
-                            }`}
-                          />
-                          <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-3 p-3">
+                          <button onClick={() => cycleTaskStatus(t.id)} className="shrink-0 hover:scale-110 transition-transform" title="Alterar status">
+                            {TASK_STATUS_ICONS[t.status]}
+                          </button>
+                          <div className="flex-1 min-w-0">
                             <input
-                              type="date"
-                              value={t.prazo}
-                              onChange={e => updateTarefa(t.id, { prazo: e.target.value })}
-                              className="bg-transparent text-[10px] font-dm text-[var(--text-tertiary)] outline-none"
+                              value={t.titulo}
+                              onChange={e => updateTarefa(t.id, { titulo: e.target.value })}
+                              placeholder="Descreva a tarefa..."
+                              className={`w-full bg-transparent text-sm font-dm outline-none ${
+                                t.status === "concluida" ? "line-through text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
+                              }`}
                             />
-                            <span className={`text-[10px] font-dm font-medium ${
-                              t.status === "concluida" ? "text-[#10b981]" :
-                              t.status === "em_andamento" ? "text-[#3b82f6]" :
-                              "text-[var(--text-tertiary)]"
-                            }`}>
-                              {t.status === "concluida" ? "Concluída" : t.status === "em_andamento" ? "Em andamento" : "Pendente"}
-                            </span>
+                            <div className="flex items-center gap-2 mt-1">
+                              <input
+                                type="date"
+                                value={t.prazo}
+                                onChange={e => updateTarefa(t.id, { prazo: e.target.value })}
+                                className="bg-transparent text-[10px] font-dm text-[var(--text-tertiary)] outline-none"
+                              />
+                              <span className={`text-[10px] font-dm font-medium ${
+                                t.status === "concluida" ? "text-[#10b981]" :
+                                t.status === "em_andamento" ? "text-[#3b82f6]" :
+                                "text-[var(--text-tertiary)]"
+                              }`}>
+                                {t.status === "concluida" ? "Concluída" : t.status === "em_andamento" ? "Em andamento" : "Pendente"}
+                              </span>
+                              {(t.subtarefas || []).length > 0 && (
+                                <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
+                                  {(t.subtarefas || []).filter(s => s.concluida).length}/{(t.subtarefas || []).length}
+                                </span>
+                              )}
+                            </div>
                           </div>
+                          <button onClick={() => addSubtarefa(t.id)} className="shrink-0 p-1 rounded hover:bg-[var(--bg-hover)] transition-colors" title="Adicionar subtarefa">
+                            <Plus size={14} className="text-[var(--text-tertiary)]" />
+                          </button>
+                          <button onClick={() => removeTarefa(t.id)} className="shrink-0 p-1 rounded hover:bg-[var(--bg-hover)] transition-colors">
+                            <X size={14} className="text-[var(--text-tertiary)]" />
+                          </button>
                         </div>
-                        <button onClick={() => removeTarefa(t.id)} className="shrink-0 p-1 rounded hover:bg-[var(--bg-hover)] transition-colors">
-                          <X size={14} className="text-[var(--text-tertiary)]" />
-                        </button>
+                        {/* Subtarefas */}
+                        {(t.subtarefas || []).length > 0 && (
+                          <div className="px-3 pb-3 pl-10 space-y-1">
+                            {(t.subtarefas || []).map(sub => (
+                              <div key={sub.id} className="flex items-center gap-2">
+                                <button onClick={() => updateSubtarefa(t.id, sub.id, { concluida: !sub.concluida })} className="shrink-0">
+                                  {sub.concluida
+                                    ? <CheckSquare size={14} className="text-[#10b981]" />
+                                    : <Square size={14} className="text-[var(--text-tertiary)]" />
+                                  }
+                                </button>
+                                <input
+                                  value={sub.titulo}
+                                  onChange={e => updateSubtarefa(t.id, sub.id, { titulo: e.target.value })}
+                                  placeholder="Subtarefa..."
+                                  className={`flex-1 bg-transparent text-xs font-dm outline-none ${
+                                    sub.concluida ? "line-through text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
+                                  }`}
+                                />
+                                <button onClick={() => removeSubtarefa(t.id, sub.id)} className="shrink-0 opacity-0 hover:opacity-100 transition-opacity">
+                                  <X size={12} className="text-[var(--text-tertiary)]" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -594,34 +668,61 @@ export default function BibliotecaPage() {
 }
 
 // ─── Capítulo Row Component ───
-function CapituloRow({ cap, index, onToggle, onUpdate, onRemove }: {
-  cap: CapituloLivro; index: number;
-  onToggle: () => void; onUpdate: (data: Partial<CapituloLivro>) => void; onRemove: () => void;
+
+const CAP_STATUS_COLORS: Record<StatusLeituraCapitulo, { icon: string; color: string }> = {
+  nao_lido: { icon: "○", color: "var(--text-tertiary)" },
+  lido_dinamico: { icon: "◐", color: "#f59e0b" },
+  lido: { icon: "●", color: "#10b981" },
+  lido_resumido: { icon: "★", color: "#8b5cf6" },
+};
+
+function CapituloRow({ cap, index, total, onCycleStatus, onUpdate, onRemove, onMove }: {
+  cap: CapituloLivro; index: number; total: number;
+  onCycleStatus: () => void; onUpdate: (data: Partial<CapituloLivro>) => void;
+  onRemove: () => void; onMove: (dir: -1 | 1) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const status = cap.status_leitura || "nao_lido";
+  const sc = CAP_STATUS_COLORS[status];
+  const isRead = status !== "nao_lido";
 
   return (
     <div
       className="rounded-xl transition-colors overflow-hidden"
       style={{ background: "var(--bg-input)", border: "1px solid var(--border-subtle)" }}
     >
-      <div className="flex items-center gap-3 p-3">
-        <button onClick={onToggle} className="shrink-0 hover:scale-110 transition-transform">
-          {cap.lido
-            ? <CheckSquare size={18} className="text-[#10b981]" />
-            : <Square size={18} className="text-[var(--text-tertiary)]" />
-          }
+      <div className="flex items-center gap-2 p-3">
+        {/* Reorder buttons */}
+        <div className="flex flex-col shrink-0">
+          <button onClick={() => onMove(-1)} disabled={index === 0}
+            className="p-0.5 rounded hover:bg-[var(--bg-hover)] disabled:opacity-20 transition-all">
+            <ChevronDown size={12} className="text-[var(--text-tertiary)] rotate-180" />
+          </button>
+          <button onClick={() => onMove(1)} disabled={index === total - 1}
+            className="p-0.5 rounded hover:bg-[var(--bg-hover)] disabled:opacity-20 transition-all">
+            <ChevronDown size={12} className="text-[var(--text-tertiary)]" />
+          </button>
+        </div>
+
+        {/* Status button */}
+        <button onClick={onCycleStatus} className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center hover:scale-110 transition-transform text-lg"
+          style={{ color: sc.color }} title={LABEL_STATUS_LEITURA_CAPITULO[status]}>
+          {sc.icon}
         </button>
+
         <div className="flex-1 min-w-0">
           <input
             value={cap.titulo}
             onChange={e => onUpdate({ titulo: e.target.value })}
             placeholder={`Capítulo ${index + 1}`}
             className={`w-full bg-transparent text-sm font-dm outline-none ${
-              cap.lido ? "line-through text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
+              isRead ? "text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
             }`}
           />
           <div className="flex items-center gap-2 mt-0.5">
+            <span className="font-dm text-[10px] font-medium" style={{ color: sc.color }}>
+              {LABEL_STATUS_LEITURA_CAPITULO[status]}
+            </span>
             {(cap.pagina_inicio || cap.pagina_fim) && (
               <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
                 pág. {cap.pagina_inicio || "?"} – {cap.pagina_fim || "?"}
@@ -641,7 +742,7 @@ function CapituloRow({ cap, index, onToggle, onUpdate, onRemove }: {
       </div>
 
       {expanded && (
-        <div className="px-3 pb-3 space-y-2 border-t border-[var(--border-subtle)] pt-2 ml-9">
+        <div className="px-3 pb-3 space-y-2 border-t border-[var(--border-subtle)] pt-2 ml-11">
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="font-dm text-[10px] text-[var(--text-tertiary)]">Pág. início</label>

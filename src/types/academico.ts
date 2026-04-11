@@ -109,22 +109,39 @@ export interface Frequencia {
   created_at: string;
 }
 
+export type StatusLeituraCapitulo = "nao_lido" | "lido_dinamico" | "lido" | "lido_resumido";
+
+export const LABEL_STATUS_LEITURA_CAPITULO: Record<StatusLeituraCapitulo, string> = {
+  nao_lido: "Não lido",
+  lido_dinamico: "Lido dinamicamente",
+  lido: "Lido",
+  lido_resumido: "Lido e resumido",
+};
+
 export interface CapituloLivro {
   id: string;
   titulo: string;
   pagina_inicio: number | null;
   pagina_fim: number | null;
-  lido: boolean;
+  status_leitura: StatusLeituraCapitulo;
   anotacoes: string;
+  ordem: number;
 }
 
 export type StatusTarefaLivro = "pendente" | "em_andamento" | "concluida";
+
+export interface SubtarefaLivro {
+  id: string;
+  titulo: string;
+  concluida: boolean;
+}
 
 export interface TarefaLivro {
   id: string;
   titulo: string;
   status: StatusTarefaLivro;
   prazo: string; // YYYY-MM-DD
+  subtarefas: SubtarefaLivro[];
   created_at: string;
 }
 
