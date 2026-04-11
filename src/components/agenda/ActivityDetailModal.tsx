@@ -380,7 +380,7 @@ export default function ActivityDetailModal({ isOpen, onClose, activity, onUpdat
                 <Button variant="ghost" size="sm" onClick={handleWhatsApp} icon={<WhatsAppIcon size={14} />}>WhatsApp</Button>
               )}
               {hasPaciente && activity.paciente_id && (
-                <Link href={`/pacientes/${activity.paciente_id}`} onClick={resetAndClose}>
+                <Link href={`/pacientes?id=${activity.paciente_id}`} onClick={resetAndClose}>
                   <Button variant="ghost" size="sm" icon={<FileText size={14} />}>Anotações</Button>
                 </Link>
               )}

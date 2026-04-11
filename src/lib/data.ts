@@ -429,7 +429,7 @@ export function searchGlobal(query: string): SearchResult[] {
 
   pacientes.forEach(p => {
     if (p.nome.toLowerCase().includes(q)) {
-      results.push({ type: 'paciente', id: p.id, title: p.nome, subtitle: `${p.status} · ${p.modalidade}`, link: `/pacientes/${p.id}` });
+      results.push({ type: 'paciente', id: p.id, title: p.nome, subtitle: `${p.status} · ${p.modalidade}`, link: `/pacientes?id=${p.id}` });
     }
   });
 
@@ -581,7 +581,7 @@ export function getAlertasCruzados(): AlertaCruzado[] {
           id: `inativo-${paciente.id}`, tipo: 'paciente_inativo',
           titulo: 'Paciente sem sessão recente',
           mensagem: `${paciente.nome} está há ${diasSemSessao} dias sem sessão realizada.`,
-          link: `/pacientes/${paciente.id}`, prioridade: 'baixa', icone: 'user-x',
+          link: `/pacientes?id=${paciente.id}`, prioridade: 'baixa', icone: 'user-x',
         });
       }
     }

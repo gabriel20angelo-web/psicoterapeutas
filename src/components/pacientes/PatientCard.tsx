@@ -51,7 +51,7 @@ export default function PatientCard({ paciente, index, lastSessionDate, nextSess
   return (
     <motion.div {...staggerChild(index)}>
       <Link
-        href={`/pacientes/${paciente.id}`}
+        href={`/pacientes?id=${paciente.id}`}
         className="group block card-base p-5 cursor-pointer"
       >
         <div className="flex items-start gap-4">
@@ -69,7 +69,7 @@ export default function PatientCard({ paciente, index, lastSessionDate, nextSess
               </h3>
               <div className="flex items-center gap-0.5 flex-shrink-0 opacity-60 group-hover:opacity-100 transition-opacity">
                 <Link
-                  href={`/pacientes/${paciente.id}?tab=sessoes`}
+                  href={`/pacientes?id=${paciente.id}&tab=sessoes`}
                   onClick={e => e.stopPropagation()}
                   title="Anotações"
                   className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--orange-500)] hover:bg-[var(--orange-glow)] transition-colors"

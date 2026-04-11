@@ -34,11 +34,11 @@ type MainTab = "sessoes" | "caso" | "canvas" | "info";
 type SessionMode = "texto" | "canvas";
 type NoteTab = "pre" | "pos";
 
-export default function PatientProfilePage() {
+export default function PatientProfilePage({ overrideId }: { overrideId?: string } = {}) {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const id = params.id as string;
+  const id = overrideId || (params.id as string);
   const paciente = getPaciente(id);
   const { profile } = useAuth();
   const templates = getTemplates();

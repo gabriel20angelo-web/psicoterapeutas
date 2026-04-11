@@ -1,8 +1,10 @@
 "use client";
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Plus } from "lucide-react";
 import Shell from "@/components/Shell";
+import PatientProfilePage from "./[id]/client";
 import SearchInput from "@/components/ui/SearchInput";
 import Select from "@/components/ui/Select";
 import Button from "@/components/ui/Button";
@@ -29,6 +31,21 @@ const SORT_OPTIONS = [
 ];
 
 export default function PacientesPage() {
+  return <Suspense><PacientesRouter /></Suspense>;
+}
+
+function PacientesRouter() {
+  const searchParams = useSearchParams();
+  const patientId = searchParams.get("id");
+
+  if (patientId) {
+    return <Suspense><PatientProfilePage overrideId={patientId} /></Suspense>;
+  }
+
+  return <PacientesListPage />;
+}
+
+function PacientesListPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();

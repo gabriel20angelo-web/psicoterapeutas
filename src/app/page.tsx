@@ -250,7 +250,7 @@ export default function DashboardPage() {
                 </p>
                 <div className="flex items-center gap-2 mt-3">
                   {nextSession.paciente && (
-                    <Link href={`/pacientes/${nextSession.paciente.id}`}>
+                    <Link href={`/pacientes?id=${nextSession.paciente.id}`}>
                       <Button variant="ghost" size="sm" icon={<FileText size={14} />}>Anotações</Button>
                     </Link>
                   )}
@@ -301,7 +301,7 @@ export default function DashboardPage() {
                         }`} />
                         <div className="flex-1 min-w-0 flex items-center gap-2">
                           {a.paciente ? (
-                            <Link href={`/pacientes/${a.paciente.id}`}
+                            <Link href={`/pacientes?id=${a.paciente.id}`}
                               className="font-dm text-sm text-[var(--text-primary)] truncate hover:text-[var(--orange-500)] hover:underline transition-colors">
                               {a.paciente.nome}
                             </Link>

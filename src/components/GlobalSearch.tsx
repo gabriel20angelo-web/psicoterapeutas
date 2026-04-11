@@ -45,7 +45,7 @@ function searchNotes(query: string): NoteSearchResult[] {
                 id: `note-${pid}-${note.sessionId}`,
                 title: `${paciente.nome} - Sessão`,
                 subtitle: snippet,
-                link: `/pacientes/${pid}?tab=anotacoes`,
+                link: `/pacientes?id=${pid}&tab=anotacoes`,
               });
               if (results.length >= 3) return results;
             }
@@ -66,7 +66,7 @@ function searchNotes(query: string): NoteSearchResult[] {
             id: `general-${pid}`,
             title: `${paciente.nome} - Caso geral`,
             subtitle: snippet,
-            link: `/pacientes/${pid}?tab=anotacoes`,
+            link: `/pacientes?id=${pid}&tab=anotacoes`,
           });
           if (results.length >= 3) return results;
         }
