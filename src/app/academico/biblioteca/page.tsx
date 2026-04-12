@@ -19,7 +19,7 @@ import RichEditor from "@/components/ui/RichEditor";
 import { useToast } from "@/contexts/ToastContext";
 import {
   getBiblioteca, createBibliotecaItem, updateBibliotecaItem, deleteBibliotecaItem,
-  getProgressoLeitura, getDisciplinas,
+  getProgressoLeitura, getDisciplinas, getGraduacoes,
 } from "@/lib/academico-data";
 import type { BibliotecaItem, BibliotecaInput, FormatoLeitura, TipoLeitura, CapituloLivro, TarefaLivro, StatusTarefaLivro, StatusLeituraFull, GrupoStatusLeitura, SubtarefaLivro } from "@/types/academico";
 import { LABEL_STATUS_LEITURA_FULL, STATUS_LEITURA_GRUPO, LABEL_GRUPO_STATUS, LABEL_FORMATO_LEITURA, LABEL_TIPO_LEITURA } from "@/types/academico";
@@ -64,7 +64,9 @@ export default function BibliotecaPage() {
   const progresso = getProgressoLeitura(currentYear);
   const allBooks = getBiblioteca();
   const disciplinas = getDisciplinas();
+  const graduacoes = getGraduacoes();
   const [filterDisciplina, setFilterDisciplina] = useState("");
+  const [filterGraduacao, setFilterGraduacao] = useState("");
 
   // Status groups used for progress calculation
   const concluidos = new Set<string>(["lido_rapido", "lido", "lido_resumido", "lido_resumido_mapa"]);
@@ -84,6 +86,7 @@ export default function BibliotecaPage() {
   }
   if (filterFormato) filtered = filtered.filter(b => b.formato === filterFormato);
   if (filterDisciplina) filtered = filtered.filter(b => b.disciplina_id === filterDisciplina);
+  if (filterGraduacao) filtered = filtered.filter(b => (b as any).graduacao_id === filterGraduacao);
 
   const sorted = [...filtered].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
@@ -97,7 +100,7 @@ export default function BibliotecaPage() {
       setEditing(null);
       setForm({
         titulo: "", autores: "", genero: "", tipo_leitura: "livro", formato: "fisico", status: "quero_ler",
-        disciplina_id: "", data_inicio: "", data_fim: "", num_paginas: null, andamento: "",
+        disciplina_id: "", graduacao_id: "", data_inicio: "", data_fim: "", num_paginas: null, andamento: "",
         ano_leitura: null, projetos: [], avaliacao: "", editora: "",
         nacionalidade_autor: "", anotacoes_html: "", capa_base64: "",
         capitulos: [], tarefas_livro: [],
@@ -121,6 +124,7 @@ export default function BibliotecaPage() {
       formato: (form.formato as FormatoLeitura) || "fisico",
       status: (form.status as StatusLeituraFull) || "quero_ler",
       disciplina_id: form.disciplina_id || "",
+      graduacao_id: (form as any).graduacao_id || "",
       data_inicio: form.data_inicio || "",
       data_fim: form.data_fim || "",
       num_paginas: form.num_paginas || null,
@@ -369,6 +373,17 @@ export default function BibliotecaPage() {
               ))}
             </select>
           )}
+          {graduacoes.length > 0 && (
+            <select value={filterGraduacao} onChange={e => setFilterGraduacao(e.target.value)} className="input-hamilton text-sm py-2">
+              <option value="">Todas grad./cursos</option>
+              {graduacoes.filter(g => g.tipo === "graduacao").map(g => (
+                <option key={g.id} value={g.id}>🎓 {g.nome}</option>
+              ))}
+              {graduacoes.filter(g => g.tipo === "curso").map(g => (
+                <option key={g.id} value={g.id}>📚 {g.nome}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Book grid */}
@@ -540,6 +555,28 @@ export default function BibliotecaPage() {
                         {disciplinas.map(d => (
                           <option key={d.id} value={d.id}>{d.nome}</option>
                         ))}
+                      </select>
+                    </div>
+                  )}
+                  {graduacoes.length > 0 && (
+                    <div>
+                      <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-1">Graduação / Curso</label>
+                      <select value={(form as any).graduacao_id || ""} onChange={e => setF("graduacao_id", e.target.value)} className="input-hamilton w-full text-sm py-2">
+                        <option value="">Nenhuma</option>
+                        {graduacoes.filter(g => g.tipo === "graduacao").length > 0 && (
+                          <optgroup label="Graduações">
+                            {graduacoes.filter(g => g.tipo === "graduacao").map(g => (
+                              <option key={g.id} value={g.id}>🎓 {g.nome}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {graduacoes.filter(g => g.tipo === "curso").length > 0 && (
+                          <optgroup label="Cursos">
+                            {graduacoes.filter(g => g.tipo === "curso").map(g => (
+                              <option key={g.id} value={g.id}>📚 {g.nome}</option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
                     </div>
                   )}

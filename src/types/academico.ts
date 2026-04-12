@@ -226,6 +226,7 @@ export interface BibliotecaItem {
   formato: FormatoLeitura;
   status: StatusLeituraFull;
   disciplina_id: string; // link to Disciplina (optional)
+  graduacao_id: string; // link to Graduacao or Curso (optional)
   data_inicio: string;
   data_fim: string;
   num_paginas: number | null;

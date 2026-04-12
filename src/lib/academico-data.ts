@@ -314,6 +314,7 @@ export function getBiblioteca(): BibliotecaItem[] {
     tipo_leitura: (b as any).tipo_leitura || "livro",
     status: migrateStatus(b.status) as any,
     disciplina_id: (b as any).disciplina_id || "",
+    graduacao_id: (b as any).graduacao_id || "",
     pomodoros_realizados: (b as any).pomodoros_realizados || 0,
     tempo_total_seg: (b as any).tempo_total_seg || 0,
     capitulos: (b.capitulos || []).map((c: any, i: number) => ({
