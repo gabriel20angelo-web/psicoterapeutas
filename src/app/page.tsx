@@ -11,7 +11,6 @@ import EmptyState from "@/components/ui/EmptyState";
 import { getAtividades, updateAtividade, getTemplates, getAlertasCruzados, onDataChange } from "@/lib/data";
 import { useAuth } from "@/contexts/AuthContext";
 import type { AlertaCruzado } from "@/lib/data";
-import { getBlogPosts } from "@/lib/blog-data";
 import { getTempoFocadoHoje, getPomodorosHoje, getMetaDiaria, formatTempo, createTarefa as createForjaAtividade } from "@/lib/forja-data";
 import { getConteudosProximos7Dias, STATUS_CONFIG as USINA_STATUS_CONFIG } from "@/lib/usina-data";
 import { fillTemplate, buildWhatsAppUrl, buildMessageVars } from "@/lib/whatsapp";
@@ -413,36 +412,6 @@ export default function DashboardPage() {
           </motion.div>
         );
       })()}
-
-      {/* Blog: latest posts */}
-      <motion.div {...staggerChild(5.5)}>
-        <Card className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <BookOpen size={18} className="text-[var(--orange-500)]" />
-              <h2 className="font-fraunces font-bold text-lg text-[var(--text-primary)]">Últimos do Blog</h2>
-            </div>
-            <Link href="/blog" className="font-dm text-xs text-[var(--orange-500)] hover:underline flex items-center gap-1">
-              Ver todos <ArrowRight size={12} />
-            </Link>
-          </div>
-          <div className="space-y-3">
-            {getBlogPosts({ status: 'publicado' }).slice(0, 3).map(post => (
-              <div key={post.id} className="flex items-start justify-between gap-4 py-2 border-b border-[var(--border-default)] last:border-0">
-                <div className="min-w-0 flex-1">
-                  <p className="font-fraunces font-semibold text-sm text-[var(--text-primary)] truncate">{post.titulo}</p>
-                  <p className="font-dm text-xs text-[var(--text-secondary)] mt-0.5">
-                    {post.autor_nome} · {format(new Date(post.updated_at), "dd MMM yyyy", { locale: ptBR })}
-                  </p>
-                </div>
-                <Link href={`/blog/${post.id}`} className="font-dm text-xs text-[var(--orange-500)] hover:underline flex-shrink-0 mt-0.5">
-                  Ler
-                </Link>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </motion.div>
 
       {/* Acadêmico Widget */}
       {(() => {

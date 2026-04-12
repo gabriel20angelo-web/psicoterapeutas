@@ -7,7 +7,7 @@ import YoutubeExt from "@tiptap/extension-youtube";
 import TextAlign from "@tiptap/extension-text-align";
 import UnderlineExt from "@tiptap/extension-underline";
 import Placeholder from "@tiptap/extension-placeholder";
-import BlogEditorToolbar from "@/components/blog/BlogEditorToolbar";
+import RichEditorToolbar from "./RichEditorToolbar";
 
 interface Props {
   content: string;
@@ -40,7 +40,7 @@ export default function RichEditor({ content, onChange, placeholder = "Escreva a
 
   return (
     <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-input)] overflow-hidden">
-      <BlogEditorToolbar editor={editor} />
+      <RichEditorToolbar editor={editor} />
       <EditorContent editor={editor} />
     </div>
   );

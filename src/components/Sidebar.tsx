@@ -24,7 +24,6 @@ const ALL_NAV: NavItem[] = [
   { label: "PsiDocs", href: "/psidocs", icon: FileText },
   { label: "Usina", href: "/conteudo", icon: Sparkles },
   { label: "Forja", href: "/forja", icon: Flame },
-  { label: "Blog", href: "/blog", icon: BookOpen },
   { label: "Acadêmico", href: "/academico", icon: GraduationCap },
 ];
 

@@ -21,7 +21,6 @@ export const MODULOS_DISPONIVEIS: ModuloConfig[] = [
   { id: "psidocs",   label: "PsiDocs",   descricao: "Gerador de documentos psicológicos",           href: "/psidocs",     icone: "file-text",        ativo: true, fixo: false },
   { id: "usina",     label: "Usina",     descricao: "Produção e planejamento de conteúdo para redes sociais", href: "/conteudo", icone: "sparkles", ativo: true, fixo: false },
   { id: "forja",     label: "Forja",     descricao: "Timer Pomodoro, tarefas e produtividade",      href: "/forja",       icone: "flame",            ativo: true, fixo: false },
-  { id: "blog",      label: "Blog",      descricao: "Seus artigos e reflexões",                     href: "/blog",        icone: "book-open",        ativo: true, fixo: false },
   { id: "academico", label: "Acadêmico", descricao: "Organização acadêmica completa",               href: "/academico",   icone: "graduation-cap",   ativo: true, fixo: false },
 ];
 

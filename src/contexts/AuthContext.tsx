@@ -14,7 +14,6 @@ interface AuthContextValue {
   canCreateAviso: boolean;
   canCreateEncaminhamento: boolean;
   canCreateFormacaoCanonica: boolean;
-  canApproveBlog: boolean;
   canManageUsers: boolean;
   logout: () => void;
 }
@@ -44,7 +43,6 @@ const defaultValue: AuthContextValue = {
   canCreateAviso: true,
   canCreateEncaminhamento: true,
   canCreateFormacaoCanonica: true,
-  canApproveBlog: true,
   canManageUsers: true,
   logout: () => {},
 };
