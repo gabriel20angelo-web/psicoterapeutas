@@ -21,6 +21,7 @@ import {
   updateDisciplina, deleteDisciplina, duplicarPeriodo,
   createPeriodo, getPeriodosEntities, updatePeriodo, deletePeriodo,
   getGraduacoes, createGraduacao, updateGraduacao, deleteGraduacao,
+  getBiblioteca,
 } from "@/lib/academico-data";
 import type { EtapaCurso, TipoEtapa } from "@/types/academico";
 import { LABEL_TIPO_ETAPA } from "@/types/academico";
@@ -635,7 +636,7 @@ function CursoCard({ grad, onUpdate }: { grad: Graduacao; onUpdate: () => void }
   const addEtapa = (tipo: TipoEtapa) => {
     persist([...etapas, {
       id: `et-${uidEtapa()}`, titulo: "", tipo, concluida: false,
-      duracao_min: null, anotacoes: "", ordem: etapas.length,
+      duracao_min: null, anotacoes: "", ordem: etapas.length, biblioteca_id: "",
     }]);
   };
 
@@ -766,6 +767,8 @@ function EtapaRow({ etapa, index, total, onToggle, onUpdate, onRemove, onMove }:
   onRemove: () => void; onMove: (dir: -1 | 1) => void;
 }) {
   const [showDetails, setShowDetails] = useState(false);
+  const livros = etapa.tipo === "leitura" ? getBiblioteca() : [];
+  const livroVinculado = etapa.biblioteca_id ? livros.find(l => l.id === etapa.biblioteca_id) : null;
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-input)", border: "1px solid var(--border-subtle)" }}>
       <div className="flex items-center gap-2 p-2.5">
@@ -787,13 +790,19 @@ function EtapaRow({ etapa, index, total, onToggle, onUpdate, onRemove, onMove }:
         </button>
         <span className="shrink-0 text-[var(--text-tertiary)]">{ETAPA_ICONS[etapa.tipo]}</span>
         <input
-          value={etapa.titulo}
+          value={etapa.titulo || (livroVinculado ? livroVinculado.titulo : "")}
           onChange={e => onUpdate({ titulo: e.target.value })}
-          placeholder={`${LABEL_TIPO_ETAPA[etapa.tipo]} ${index + 1}`}
+          placeholder={livroVinculado ? livroVinculado.titulo : `${LABEL_TIPO_ETAPA[etapa.tipo]} ${index + 1}`}
           className={`flex-1 bg-transparent text-sm font-dm outline-none ${
             etapa.concluida ? "line-through text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
           }`}
         />
+        {livroVinculado && (
+          <a href={`/forja/foco?atividade=academico-bk-${livroVinculado.id}`} onClick={e => e.stopPropagation()}
+            className="shrink-0 p-1 rounded hover:bg-[var(--orange-glow)]" title="Pomodoro do livro">
+            <Timer size={12} className="text-[var(--orange-500)]" />
+          </a>
+        )}
         <select value={etapa.tipo} onChange={e => onUpdate({ tipo: e.target.value as TipoEtapa })}
           className="shrink-0 bg-transparent text-[10px] font-dm text-[var(--text-tertiary)] outline-none border-0 cursor-pointer" style={{ maxWidth: 70 }}>
           {Object.entries(LABEL_TIPO_ETAPA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -807,6 +816,23 @@ function EtapaRow({ etapa, index, total, onToggle, onUpdate, onRemove, onMove }:
       </div>
       {showDetails && (
         <div className="px-3 pb-3 ml-12 space-y-2 border-t border-[var(--border-subtle)] pt-2">
+          {etapa.tipo === "leitura" && livros.length > 0 && (
+            <div>
+              <label className="font-dm text-[10px] text-[var(--text-tertiary)]">Vincular a livro/artigo da biblioteca</label>
+              <select
+                value={etapa.biblioteca_id || ""}
+                onChange={e => onUpdate({ biblioteca_id: e.target.value })}
+                className="input-hamilton w-full text-xs py-1.5"
+              >
+                <option value="">Nenhum (título manual)</option>
+                {livros.map(l => (
+                  <option key={l.id} value={l.id}>
+                    {l.tipo_leitura === "artigo" ? "📄" : "📖"} {l.titulo}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <input
             type="number"
             value={etapa.duracao_min ?? ""}

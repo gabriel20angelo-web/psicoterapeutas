@@ -309,6 +309,7 @@ export interface EtapaCurso {
   duracao_min: number | null; // duração em minutos (vídeo) ou páginas (leitura)
   anotacoes: string; // links, notas gerais
   ordem: number;
+  biblioteca_id: string; // link to BibliotecaItem (only for tipo "leitura")
 }
 
 export interface Graduacao {

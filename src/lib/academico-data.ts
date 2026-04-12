@@ -659,6 +659,7 @@ export function getGraduacoes(): Graduacao[] {
     etapas: ((g as any).etapas || []).map((e: any, i: number) => ({
       ...e,
       ordem: e.ordem ?? i,
+      biblioteca_id: e.biblioteca_id || "",
     })),
     anotacoes_gerais: (g as any).anotacoes_gerais || "",
     pomodoros_realizados: (g as any).pomodoros_realizados || 0,
