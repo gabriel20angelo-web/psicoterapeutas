@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   GraduationCap, Plus, Copy, Trash2, ChevronDown, ChevronRight,
   ArrowLeft, Pencil, ExternalLink, BookOpen,
+  Video, PenTool, Folder, X, Circle, CheckCircle2, Timer,
 } from "lucide-react";
 import Shell from "@/components/Shell";
 import Card from "@/components/ui/Card";
@@ -21,6 +22,8 @@ import {
   createPeriodo, getPeriodosEntities, updatePeriodo, deletePeriodo,
   getGraduacoes, createGraduacao, updateGraduacao, deleteGraduacao,
 } from "@/lib/academico-data";
+import type { EtapaCurso, TipoEtapa } from "@/types/academico";
+import { LABEL_TIPO_ETAPA } from "@/types/academico";
 import DisciplinaForm from "../_components/DisciplinaForm";
 import type { Disciplina, DisciplinaInput, Periodo, Graduacao, TipoGraduacao } from "@/types/academico";
 import { LABEL_STATUS_DISCIPLINA, LABEL_TIPO_DISCIPLINA, LABEL_TIPO_GRADUACAO } from "@/types/academico";
@@ -64,6 +67,7 @@ export default function PeriodosPage() {
   const [gradNome, setGradNome] = useState("");
   const [gradTipo, setGradTipo] = useState<TipoGraduacao>("graduacao");
   const [gradInstituicao, setGradInstituicao] = useState("");
+  const [gradLink, setGradLink] = useState("");
   const [gradTotalCreditos, setGradTotalCreditos] = useState("");
   const [gradAtiva, setGradAtiva] = useState(true);
 
@@ -193,6 +197,7 @@ export default function PeriodosPage() {
       setGradNome(grad.nome);
       setGradTipo(grad.tipo || "graduacao");
       setGradInstituicao(grad.instituicao);
+      setGradLink((grad as any).link || "");
       setGradTotalCreditos(String(grad.total_creditos || ""));
       setGradAtiva(grad.ativa ?? true);
     } else {
@@ -200,6 +205,7 @@ export default function PeriodosPage() {
       setGradNome("");
       setGradTipo("graduacao");
       setGradInstituicao("");
+      setGradLink("");
       setGradTotalCreditos("");
       setGradAtiva(true);
     }
@@ -208,7 +214,18 @@ export default function PeriodosPage() {
 
   const handleSaveGrad = () => {
     if (!gradNome.trim()) return;
-    const gradData = { nome: gradNome, tipo: gradTipo, instituicao: gradInstituicao, total_creditos: Number(gradTotalCreditos) || 0, ativa: gradAtiva };
+    const gradData: any = {
+      nome: gradNome,
+      tipo: gradTipo,
+      instituicao: gradInstituicao,
+      link: gradLink,
+      total_creditos: Number(gradTotalCreditos) || 0,
+      ativa: gradAtiva,
+      etapas: editingGrad?.etapas || [],
+      anotacoes_gerais: (editingGrad as any)?.anotacoes_gerais || "",
+      pomodoros_realizados: (editingGrad as any)?.pomodoros_realizados || 0,
+      tempo_total_seg: (editingGrad as any)?.tempo_total_seg || 0,
+    };
     if (editingGrad) {
       updateGraduacao(editingGrad.id, gradData);
       toast(`${LABEL_TIPO_GRADUACAO[gradTipo]} atualizada!`, { type: "success" });
@@ -395,16 +412,17 @@ export default function PeriodosPage() {
           </Card>
         ) : (
           <div className="space-y-6">
-            {/* Períodos agrupados por graduação */}
+            {/* Graduações e Cursos */}
             {graduacoes.map(grad => {
               const periodos = periodsByGrad.get(grad.id) || [];
+              const isCurso = grad.tipo === "curso";
               return (
                 <div key={grad.id}>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2 flex-wrap">
-                      {grad.tipo === "curso" ? <BookOpen size={18} className="text-[#8b5cf6]" /> : <GraduationCap size={18} className="text-[var(--orange-500)]" />}
+                      {isCurso ? <BookOpen size={18} className="text-[#8b5cf6]" /> : <GraduationCap size={18} className="text-[var(--orange-500)]" />}
                       <h2 className="font-fraunces text-lg font-semibold text-[var(--text-primary)]">{grad.nome}</h2>
-                      <Badge bg={grad.tipo === "curso" ? "rgba(139,92,246,.1)" : "var(--orange-glow)"} text={grad.tipo === "curso" ? "#8b5cf6" : "var(--orange-500)"} label={LABEL_TIPO_GRADUACAO[grad.tipo || "graduacao"]} />
+                      <Badge bg={isCurso ? "rgba(139,92,246,.1)" : "var(--orange-glow)"} text={isCurso ? "#8b5cf6" : "var(--orange-500)"} label={LABEL_TIPO_GRADUACAO[grad.tipo || "graduacao"]} />
                       {grad.ativa ? (
                         <Badge bg="rgba(16,185,129,.1)" text="#10b981" label="Ativa" />
                       ) : (
@@ -415,10 +433,12 @@ export default function PeriodosPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => openCreatePeriodo(grad.id)}
-                        className="px-2 py-1 rounded-lg font-dm text-xs text-[var(--orange-500)] hover:bg-[var(--bg-hover)]">
-                        <Plus size={12} className="inline mr-1" />Período
-                      </button>
+                      {!isCurso && (
+                        <button onClick={() => openCreatePeriodo(grad.id)}
+                          className="px-2 py-1 rounded-lg font-dm text-xs text-[var(--orange-500)] hover:bg-[var(--bg-hover)]">
+                          <Plus size={12} className="inline mr-1" />Período
+                        </button>
+                      )}
                       <button onClick={() => openGradForm(grad)}
                         className="p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
                         <Pencil size={13} />
@@ -429,7 +449,9 @@ export default function PeriodosPage() {
                       </button>
                     </div>
                   </div>
-                  {periodos.length === 0 ? (
+                  {isCurso ? (
+                    <CursoCard grad={grad} onUpdate={refresh} />
+                  ) : periodos.length === 0 ? (
                     <Card>
                       <div className="p-4 text-center">
                         <p className="font-dm text-sm text-[var(--text-tertiary)]">Nenhum período nesta graduação.</p>
@@ -506,8 +528,13 @@ export default function PeriodosPage() {
               { value: "curso", label: "Curso" },
             ]} />
             <Input label="Nome *" value={gradNome} onChange={setGradNome} placeholder={gradTipo === "curso" ? "Ex: Pós em TCC, Curso de extensão" : "Ex: Psicologia"} />
-            <Input label="Instituição" value={gradInstituicao} onChange={setGradInstituicao} placeholder="Ex: UFMG" />
-            <Input label="Total de créditos" type="number" value={gradTotalCreditos} onChange={setGradTotalCreditos} placeholder="Ex: 240 (opcional)" />
+            <Input label={gradTipo === "curso" ? "Plataforma" : "Instituição"} value={gradInstituicao} onChange={setGradInstituicao} placeholder={gradTipo === "curso" ? "Ex: Udemy, YouTube, Coursera" : "Ex: UFMG"} />
+            {gradTipo === "curso" && (
+              <Input label="Link do curso" value={gradLink} onChange={setGradLink} placeholder="https://..." />
+            )}
+            {gradTipo === "graduacao" && (
+              <Input label="Total de créditos" type="number" value={gradTotalCreditos} onChange={setGradTotalCreditos} placeholder="Ex: 240 (opcional)" />
+            )}
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={gradAtiva} onChange={e => setGradAtiva(e.target.checked)}
                 className="w-4 h-4 rounded border-[var(--border-default)] accent-[#10b981]" />
@@ -578,5 +605,224 @@ export default function PeriodosPage() {
         </Modal>
       </div>
     </Shell>
+  );
+}
+
+// ─── Curso Card (when graduacao.tipo === "curso") ───
+
+const ETAPA_ICONS: Record<TipoEtapa, React.ReactNode> = {
+  aula: <Video size={14} />,
+  leitura: <BookOpen size={14} />,
+  exercicio: <PenTool size={14} />,
+  projeto: <Folder size={14} />,
+  outro: <Circle size={14} />,
+};
+
+function uidEtapa() { return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
+
+function CursoCard({ grad, onUpdate }: { grad: Graduacao; onUpdate: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const etapas = grad.etapas || [];
+  const concluidas = etapas.filter(e => e.concluida).length;
+  const pct = etapas.length > 0 ? Math.round((concluidas / etapas.length) * 100) : 0;
+
+  const persist = (newEtapas: EtapaCurso[], extra: Partial<Graduacao> = {}) => {
+    updateGraduacao(grad.id, { ...extra, etapas: newEtapas } as any);
+    onUpdate();
+  };
+
+  const addEtapa = (tipo: TipoEtapa) => {
+    persist([...etapas, {
+      id: `et-${uidEtapa()}`, titulo: "", tipo, concluida: false,
+      duracao_min: null, anotacoes: "", ordem: etapas.length,
+    }]);
+  };
+
+  const updateEtapa = (id: string, data: Partial<EtapaCurso>) => {
+    persist(etapas.map(e => e.id === id ? { ...e, ...data } : e));
+  };
+
+  const removeEtapa = (id: string) => {
+    persist(etapas.filter(e => e.id !== id).map((e, i) => ({ ...e, ordem: i })));
+  };
+
+  const moveEtapa = (idx: number, dir: -1 | 1) => {
+    const target = idx + dir;
+    if (target < 0 || target >= etapas.length) return;
+    const arr = [...etapas];
+    [arr[idx], arr[target]] = [arr[target], arr[idx]];
+    persist(arr.map((e, i) => ({ ...e, ordem: i })));
+  };
+
+  return (
+    <Card>
+      <div className="p-4 space-y-3">
+        {/* Progress + Quick info */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="font-dm text-xs text-[var(--text-tertiary)]">{concluidas}/{etapas.length} concluídas</span>
+              <span className="font-mono text-xs font-bold text-[#8b5cf6]">{pct}%</span>
+            </div>
+            <div className="w-full h-2 rounded-full bg-[var(--bg-hover)] overflow-hidden">
+              <div className="h-full rounded-full bg-[#8b5cf6] transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+          {(grad as any).link && (
+            <a href={(grad as any).link} target="_blank" rel="noopener noreferrer"
+              className="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[#8b5cf6]" title="Abrir curso">
+              <ExternalLink size={14} />
+            </a>
+          )}
+          <a href={`/forja/foco?atividade=academico-bk-${grad.id}`}
+            className="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)] hover:text-[var(--orange-500)]" title="Pomodoro">
+            <Timer size={14} />
+          </a>
+          <button onClick={() => setExpanded(!expanded)}
+            className="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-tertiary)]">
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+        </div>
+
+        {(grad.tempo_total_seg > 0 || grad.pomodoros_realizados > 0) && (
+          <div className="flex items-center gap-3">
+            {grad.tempo_total_seg > 0 && (
+              <span className="font-mono text-[10px] text-[#3b82f6] flex items-center gap-0.5">
+                <Timer size={10} /> {Math.floor(grad.tempo_total_seg / 3600)}h{Math.floor((grad.tempo_total_seg % 3600) / 60).toString().padStart(2, "0")}m
+              </span>
+            )}
+            {grad.pomodoros_realizados > 0 && (
+              <span className="font-mono text-[10px] text-[var(--orange-500)]">{grad.pomodoros_realizados} 🍅</span>
+            )}
+          </div>
+        )}
+
+        {expanded && (
+          <div className="space-y-2 pt-2 border-t border-[var(--border-subtle)]">
+            {/* Add etapa buttons */}
+            <div className="flex gap-1 flex-wrap">
+              <button onClick={() => addEtapa("aula")} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-dm font-medium bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:bg-[var(--bg-active)]">
+                <Video size={10} /> Aula
+              </button>
+              <button onClick={() => addEtapa("leitura")} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-dm font-medium bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:bg-[var(--bg-active)]">
+                <BookOpen size={10} /> Leitura
+              </button>
+              <button onClick={() => addEtapa("exercicio")} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-dm font-medium bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:bg-[var(--bg-active)]">
+                <PenTool size={10} /> Exercício
+              </button>
+              <button onClick={() => addEtapa("projeto")} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-dm font-medium bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:bg-[var(--bg-active)]">
+                <Folder size={10} /> Projeto
+              </button>
+              <button onClick={() => addEtapa("outro")} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-dm font-medium bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:bg-[var(--bg-active)]">
+                <Plus size={10} /> Outro
+              </button>
+              <div className="flex-1" />
+              <button onClick={() => setShowNotes(!showNotes)} className="px-2 py-1 rounded-lg text-[10px] font-dm font-medium text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]">
+                Notas gerais
+              </button>
+            </div>
+
+            {showNotes && (
+              <textarea
+                value={(grad as any).anotacoes_gerais || ""}
+                onChange={e => { updateGraduacao(grad.id, { anotacoes_gerais: e.target.value } as any); onUpdate(); }}
+                placeholder="Notas gerais do curso (links, credenciais, observações)..."
+                rows={4}
+                className="input-hamilton w-full text-xs resize-none"
+              />
+            )}
+
+            {etapas.length === 0 ? (
+              <p className="font-dm text-xs text-[var(--text-tertiary)] text-center py-4">
+                Nenhuma etapa. Adicione aulas, leituras ou exercícios.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {etapas.map((etapa, idx) => (
+                  <EtapaRow
+                    key={etapa.id}
+                    etapa={etapa}
+                    index={idx}
+                    total={etapas.length}
+                    onToggle={() => updateEtapa(etapa.id, { concluida: !etapa.concluida })}
+                    onUpdate={data => updateEtapa(etapa.id, data)}
+                    onRemove={() => removeEtapa(etapa.id)}
+                    onMove={dir => moveEtapa(idx, dir)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function EtapaRow({ etapa, index, total, onToggle, onUpdate, onRemove, onMove }: {
+  etapa: EtapaCurso; index: number; total: number;
+  onToggle: () => void; onUpdate: (data: Partial<EtapaCurso>) => void;
+  onRemove: () => void; onMove: (dir: -1 | 1) => void;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-input)", border: "1px solid var(--border-subtle)" }}>
+      <div className="flex items-center gap-2 p-2.5">
+        <div className="flex flex-col shrink-0">
+          <button onClick={() => onMove(-1)} disabled={index === 0}
+            className="p-0.5 rounded hover:bg-[var(--bg-hover)] disabled:opacity-20">
+            <ChevronDown size={10} className="text-[var(--text-tertiary)] rotate-180" />
+          </button>
+          <button onClick={() => onMove(1)} disabled={index === total - 1}
+            className="p-0.5 rounded hover:bg-[var(--bg-hover)] disabled:opacity-20">
+            <ChevronDown size={10} className="text-[var(--text-tertiary)]" />
+          </button>
+        </div>
+        <button onClick={onToggle} className="shrink-0 hover:scale-110 transition-transform">
+          {etapa.concluida
+            ? <CheckCircle2 size={18} className="text-[#10b981]" />
+            : <Circle size={18} className="text-[var(--text-tertiary)]" />
+          }
+        </button>
+        <span className="shrink-0 text-[var(--text-tertiary)]">{ETAPA_ICONS[etapa.tipo]}</span>
+        <input
+          value={etapa.titulo}
+          onChange={e => onUpdate({ titulo: e.target.value })}
+          placeholder={`${LABEL_TIPO_ETAPA[etapa.tipo]} ${index + 1}`}
+          className={`flex-1 bg-transparent text-sm font-dm outline-none ${
+            etapa.concluida ? "line-through text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
+          }`}
+        />
+        <select value={etapa.tipo} onChange={e => onUpdate({ tipo: e.target.value as TipoEtapa })}
+          className="shrink-0 bg-transparent text-[10px] font-dm text-[var(--text-tertiary)] outline-none border-0 cursor-pointer" style={{ maxWidth: 70 }}>
+          {Object.entries(LABEL_TIPO_ETAPA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <button onClick={() => setShowDetails(!showDetails)} className="shrink-0 p-1 rounded hover:bg-[var(--bg-hover)]">
+          {showDetails ? <ChevronDown size={12} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={12} className="text-[var(--text-tertiary)]" />}
+        </button>
+        <button onClick={onRemove} className="shrink-0 p-1 rounded hover:bg-[var(--bg-hover)]">
+          <X size={12} className="text-[var(--text-tertiary)]" />
+        </button>
+      </div>
+      {showDetails && (
+        <div className="px-3 pb-3 ml-12 space-y-2 border-t border-[var(--border-subtle)] pt-2">
+          <input
+            type="number"
+            value={etapa.duracao_min ?? ""}
+            onChange={e => onUpdate({ duracao_min: e.target.value ? Number(e.target.value) : null })}
+            placeholder={etapa.tipo === "leitura" ? "Páginas" : "Duração (min)"}
+            className="input-hamilton w-full text-xs py-1.5"
+          />
+          <textarea
+            value={etapa.anotacoes}
+            onChange={e => onUpdate({ anotacoes: e.target.value })}
+            placeholder="Anotações, links..."
+            rows={3}
+            className="input-hamilton w-full text-xs py-1.5 resize-none"
+          />
+        </div>
+      )}
+    </div>
   );
 }

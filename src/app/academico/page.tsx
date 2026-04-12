@@ -33,7 +33,6 @@ const NAV_CARDS = [
   { label: "Notas", desc: "Médias, CR e avaliações", href: "/academico/notas", icon: TrendingUp, color: "#06b6d4" },
   { label: "Frequência", desc: "Presenças e faltas", href: "/academico/frequencia", icon: Calendar, color: "#10b981" },
   { label: "Biblioteca", desc: "Leituras e livros", href: "/academico/biblioteca", icon: BookMarked, color: "#f59e0b" },
-  { label: "Cursos", desc: "Cursos avulsos e trilhas", href: "/academico/cursos", icon: Play, color: "#06b6d4" },
   { label: "Metas", desc: "Objetivos e reflexões", href: "/academico/metas", icon: Target, color: "#ec4899" },
   { label: "Mapa", desc: "Fluxograma da graduação", href: "/academico/mapa", icon: Map, color: "#8b5cf6" },
   { label: "Planejamento", desc: "Semana de estudos", href: "/academico/planejamento", icon: BarChart3, color: "#64748b" },

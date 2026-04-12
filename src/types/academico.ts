@@ -289,13 +289,41 @@ export const LABEL_TIPO_GRADUACAO: Record<TipoGraduacao, string> = {
   curso: "Curso",
 };
 
+// ─── ETAPAS DE CURSO (para cursos sem períodos/disciplinas) ───
+
+export type TipoEtapa = "aula" | "leitura" | "exercicio" | "projeto" | "outro";
+
+export const LABEL_TIPO_ETAPA: Record<TipoEtapa, string> = {
+  aula: "Aula",
+  leitura: "Leitura",
+  exercicio: "Exercício",
+  projeto: "Projeto",
+  outro: "Outro",
+};
+
+export interface EtapaCurso {
+  id: string;
+  titulo: string;
+  tipo: TipoEtapa;
+  concluida: boolean;
+  duracao_min: number | null; // duração em minutos (vídeo) ou páginas (leitura)
+  anotacoes: string; // links, notas gerais
+  ordem: number;
+}
+
 export interface Graduacao {
   id: string;
   tipo: TipoGraduacao;
-  nome: string; // ex: "Psicologia", "Ciência da Computação"
-  instituicao: string;
-  total_creditos: number; // total de créditos para conclusão do curso
+  nome: string; // ex: "Psicologia", "Curso de TCC"
+  instituicao: string; // ou plataforma (Udemy, YouTube, etc.) para cursos
+  link: string; // link do curso (só para cursos)
+  total_creditos: number; // só para graduações
   ativa: boolean; // allows multiple active
+  // Para cursos: etapas diretas (sem períodos/disciplinas)
+  etapas: EtapaCurso[];
+  anotacoes_gerais: string; // notas gerais (links, credenciais, etc.)
+  pomodoros_realizados: number;
+  tempo_total_seg: number;
   created_at: string;
 }
 
@@ -428,54 +456,6 @@ export const LABEL_STATUS_EXTRACURRICULAR: Record<StatusExtracurricular, string>
   em_andamento: "Em andamento",
   concluido: "Concluído",
 };
-
-// ─── CURSOS AVULSOS ───
-
-export type StatusCursoAvulso = "nao_iniciado" | "em_andamento" | "concluido" | "abandonado";
-export type TipoEtapa = "aula" | "leitura" | "exercicio" | "projeto" | "outro";
-
-export const LABEL_STATUS_CURSO_AVULSO: Record<StatusCursoAvulso, string> = {
-  nao_iniciado: "Não iniciado",
-  em_andamento: "Em andamento",
-  concluido: "Concluído",
-  abandonado: "Abandonado",
-};
-
-export const LABEL_TIPO_ETAPA: Record<TipoEtapa, string> = {
-  aula: "Aula",
-  leitura: "Leitura",
-  exercicio: "Exercício",
-  projeto: "Projeto",
-  outro: "Outro",
-};
-
-export interface EtapaCurso {
-  id: string;
-  titulo: string;
-  tipo: TipoEtapa;
-  concluida: boolean;
-  duracao_min: number | null; // duração em minutos (vídeo) ou páginas (leitura)
-  anotacoes: string; // links, notas gerais
-  ordem: number;
-}
-
-export interface CursoAvulso {
-  id: string;
-  titulo: string;
-  plataforma: string; // Ex: Udemy, YouTube, Coursera, Livro X
-  link: string;
-  descricao: string;
-  status: StatusCursoAvulso;
-  etapas: EtapaCurso[];
-  anotacoes_gerais: string; // notas gerais do curso (links úteis, senhas, etc)
-  tags: string[]; // Ex: ["Psicologia", "TCC", "Psicanálise"]
-  pomodoros_realizados: number;
-  tempo_total_seg: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export type CursoAvulsoInput = Omit<CursoAvulso, "id" | "created_at" | "updated_at">;
 
 // ─── AVALIAÇÕES / NOTAS ───
 
