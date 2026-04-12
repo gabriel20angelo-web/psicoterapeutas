@@ -301,12 +301,87 @@ export const LABEL_TIPO_ETAPA: Record<TipoEtapa, string> = {
   outro: "Outro",
 };
 
+// Status genérico do curso (graduacao tipo "curso")
+export type StatusCurso = "nao_iniciado" | "em_andamento" | "concluido" | "descontinuado";
+
+export const LABEL_STATUS_CURSO: Record<StatusCurso, string> = {
+  nao_iniciado: "Não iniciado",
+  em_andamento: "Em andamento",
+  concluido: "Concluído",
+  descontinuado: "Descontinuado",
+};
+
+// Status específicos por tipo de etapa
+export const STATUS_ETAPA_BY_TIPO: Record<TipoEtapa, { value: string; label: string }[]> = {
+  aula: [
+    { value: "nao_assistido",      label: "Não assistido" },
+    { value: "assistindo",         label: "Assistindo" },
+    { value: "assistido",          label: "Assistido" },
+    { value: "assistido_resumido", label: "Assistido e resumido" },
+  ],
+  leitura: [
+    { value: "nao_lido",      label: "Não lido" },
+    { value: "lendo",         label: "Lendo" },
+    { value: "lido",          label: "Lido" },
+    { value: "lido_resumido", label: "Lido e resumido" },
+  ],
+  exercicio: [
+    { value: "nao_feito",       label: "Não feito" },
+    { value: "fazendo",         label: "Fazendo" },
+    { value: "feito",           label: "Feito" },
+    { value: "feito_corrigido", label: "Feito e corrigido" },
+  ],
+  projeto: [
+    { value: "nao_iniciado", label: "Não iniciado" },
+    { value: "em_andamento", label: "Em andamento" },
+    { value: "concluido",    label: "Concluído" },
+  ],
+  outro: [
+    { value: "nao_iniciado", label: "Não iniciado" },
+    { value: "em_andamento", label: "Em andamento" },
+    { value: "concluido",    label: "Concluído" },
+  ],
+};
+
+const STATUS_INICIAL_BY_TIPO: Record<TipoEtapa, string> = {
+  aula: "nao_assistido",
+  leitura: "nao_lido",
+  exercicio: "nao_feito",
+  projeto: "nao_iniciado",
+  outro: "nao_iniciado",
+};
+
+export function getStatusInicial(tipo: TipoEtapa): string {
+  return STATUS_INICIAL_BY_TIPO[tipo];
+}
+
+const STATUS_CONCLUIDO_VALUES = new Set([
+  "assistido", "assistido_resumido",
+  "lido", "lido_resumido",
+  "feito", "feito_corrigido",
+  "concluido",
+]);
+
+export function isStatusEtapaConcluido(status: string): boolean {
+  return STATUS_CONCLUIDO_VALUES.has(status);
+}
+
+const STATUS_EM_PROGRESSO = new Set([
+  "assistindo", "lendo", "fazendo", "em_andamento",
+]);
+
+export function isStatusEtapaEmProgresso(status: string): boolean {
+  return STATUS_EM_PROGRESSO.has(status);
+}
+
 export interface EtapaCurso {
   id: string;
   titulo: string;
   tipo: TipoEtapa;
-  concluida: boolean;
-  duracao_min: number | null; // duração em minutos (vídeo) ou páginas (leitura)
+  status: string; // type-specific (use STATUS_ETAPA_BY_TIPO[tipo])
+  concluida: boolean; // derived from status — kept for backwards compat
+  duracao_min: number | null; // duração total em minutos (vídeo) ou páginas (leitura)
+  posicao: string; // ex: "15min", "pág 23" — onde parou
   anotacoes: string; // links, notas gerais
   ordem: number;
   biblioteca_id: string; // link to BibliotecaItem (only for tipo "leitura")
@@ -320,6 +395,7 @@ export interface Graduacao {
   link: string; // link do curso (só para cursos)
   total_creditos: number; // só para graduações
   ativa: boolean; // allows multiple active
+  status_curso: StatusCurso; // só para cursos (graduação usa periodos/status próprio)
   // Para cursos: etapas diretas (sem períodos/disciplinas)
   etapas: EtapaCurso[];
   anotacoes_gerais: string; // notas gerais (links, credenciais, etc.)

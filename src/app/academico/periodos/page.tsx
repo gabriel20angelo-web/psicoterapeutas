@@ -23,8 +23,8 @@ import {
   getGraduacoes, createGraduacao, updateGraduacao, deleteGraduacao,
   getBiblioteca,
 } from "@/lib/academico-data";
-import type { EtapaCurso, TipoEtapa } from "@/types/academico";
-import { LABEL_TIPO_ETAPA } from "@/types/academico";
+import type { EtapaCurso, TipoEtapa, StatusCurso } from "@/types/academico";
+import { LABEL_TIPO_ETAPA, STATUS_ETAPA_BY_TIPO, getStatusInicial, isStatusEtapaConcluido, isStatusEtapaEmProgresso, LABEL_STATUS_CURSO } from "@/types/academico";
 import DisciplinaForm from "../_components/DisciplinaForm";
 import type { Disciplina, DisciplinaInput, Periodo, Graduacao, TipoGraduacao } from "@/types/academico";
 import { LABEL_STATUS_DISCIPLINA, LABEL_TIPO_DISCIPLINA, LABEL_TIPO_GRADUACAO } from "@/types/academico";
@@ -625,8 +625,11 @@ function CursoCard({ grad, onUpdate }: { grad: Graduacao; onUpdate: () => void }
   const [expanded, setExpanded] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const etapas = grad.etapas || [];
-  const concluidas = etapas.filter(e => e.concluida).length;
+  const concluidas = etapas.filter(e => isStatusEtapaConcluido(e.status || "")).length;
   const pct = etapas.length > 0 ? Math.round((concluidas / etapas.length) * 100) : 0;
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkTipo, setBulkTipo] = useState<TipoEtapa>("aula");
+  const [bulkText, setBulkText] = useState("");
 
   const persist = (newEtapas: EtapaCurso[], extra: Partial<Graduacao> = {}) => {
     updateGraduacao(grad.id, { ...extra, etapas: newEtapas } as any);
@@ -635,9 +638,25 @@ function CursoCard({ grad, onUpdate }: { grad: Graduacao; onUpdate: () => void }
 
   const addEtapa = (tipo: TipoEtapa) => {
     persist([...etapas, {
-      id: `et-${uidEtapa()}`, titulo: "", tipo, concluida: false,
-      duracao_min: null, anotacoes: "", ordem: etapas.length, biblioteca_id: "",
+      id: `et-${uidEtapa()}`, titulo: "", tipo, status: getStatusInicial(tipo), concluida: false,
+      duracao_min: null, posicao: "", anotacoes: "", ordem: etapas.length, biblioteca_id: "",
     }]);
+  };
+
+  const addEtapasBulk = (tipo: TipoEtapa, titulos: string[]) => {
+    const novas: EtapaCurso[] = titulos.filter(t => t.trim()).map((titulo, i) => ({
+      id: `et-${uidEtapa()}-${i}`,
+      titulo: titulo.trim().replace(/^\d+[.)]\s*/, ""), // remove "1. " prefix
+      tipo,
+      status: getStatusInicial(tipo),
+      concluida: false,
+      duracao_min: null,
+      posicao: "",
+      anotacoes: "",
+      ordem: etapas.length + i,
+      biblioteca_id: "",
+    }));
+    persist([...etapas, ...novas]);
   };
 
   const updateEtapa = (id: string, data: Partial<EtapaCurso>) => {
@@ -656,9 +675,33 @@ function CursoCard({ grad, onUpdate }: { grad: Graduacao; onUpdate: () => void }
     persist(arr.map((e, i) => ({ ...e, ordem: i })));
   };
 
+  const statusCurso = (grad as any).status_curso || "nao_iniciado";
+  const STATUS_CURSO_COLORS: Record<string, { bg: string; text: string }> = {
+    nao_iniciado:  { bg: "var(--bg-hover)", text: "var(--text-secondary)" },
+    em_andamento:  { bg: "rgba(59,130,246,.1)", text: "#3b82f6" },
+    concluido:     { bg: "rgba(16,185,129,.1)", text: "#10b981" },
+    descontinuado: { bg: "rgba(239,68,68,.1)", text: "#ef4444" },
+  };
+  const sc = STATUS_CURSO_COLORS[statusCurso];
+
   return (
     <Card>
       <div className="p-4 space-y-3">
+        {/* Status do curso */}
+        <div className="flex items-center gap-2">
+          <span className="font-dm text-[10px] text-[var(--text-tertiary)] uppercase tracking-wider">Status:</span>
+          <select
+            value={statusCurso}
+            onChange={e => { updateGraduacao(grad.id, { status_curso: e.target.value as StatusCurso } as any); onUpdate(); }}
+            className="px-2 py-1 rounded-md text-[10px] font-dm font-medium border-0 outline-none cursor-pointer"
+            style={{ background: sc.bg, color: sc.text }}
+          >
+            {Object.entries(LABEL_STATUS_CURSO).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+        </div>
+
         {/* Progress + Quick info */}
         <div className="flex items-center gap-3">
           <div className="flex-1">
@@ -718,6 +761,9 @@ function CursoCard({ grad, onUpdate }: { grad: Graduacao; onUpdate: () => void }
               <button onClick={() => addEtapa("outro")} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-dm font-medium bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:bg-[var(--bg-active)]">
                 <Plus size={10} /> Outro
               </button>
+              <button onClick={() => setShowBulk(true)} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-dm font-medium bg-[var(--orange-glow)] text-[var(--orange-500)] hover:brightness-110">
+                <Plus size={10} /> Em lote
+              </button>
               <div className="flex-1" />
               <button onClick={() => setShowNotes(!showNotes)} className="px-2 py-1 rounded-lg text-[10px] font-dm font-medium text-[var(--text-tertiary)] hover:bg-[var(--bg-hover)]">
                 Notas gerais
@@ -734,6 +780,43 @@ function CursoCard({ grad, onUpdate }: { grad: Graduacao; onUpdate: () => void }
               />
             )}
 
+            {/* Bulk add modal */}
+            <Modal isOpen={showBulk} onClose={() => setShowBulk(false)} title="Adicionar etapas em lote" size="md">
+              <div className="space-y-3">
+                <div>
+                  <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-1">Tipo das etapas</label>
+                  <select value={bulkTipo} onChange={e => setBulkTipo(e.target.value as TipoEtapa)} className="input-hamilton w-full text-sm py-2">
+                    {Object.entries(LABEL_TIPO_ETAPA).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-1">Uma etapa por linha</label>
+                  <textarea
+                    value={bulkText}
+                    onChange={e => setBulkText(e.target.value)}
+                    placeholder={`Aula 1: Introdução\nAula 2: Conceitos básicos\nAula 3: Aplicações\n...`}
+                    rows={10}
+                    className="input-hamilton w-full text-sm resize-none font-mono"
+                  />
+                  <p className="font-dm text-[10px] text-[var(--text-tertiary)] mt-1">Prefixos como "1. " ou "1) " são removidos automaticamente</p>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="secondary" onClick={() => setShowBulk(false)}>Cancelar</Button>
+                  <Button variant="primary" onClick={() => {
+                    const linhas = bulkText.split("\n").filter(l => l.trim());
+                    if (linhas.length === 0) return;
+                    addEtapasBulk(bulkTipo, linhas);
+                    setBulkText("");
+                    setShowBulk(false);
+                  }} disabled={!bulkText.trim()}>
+                    Adicionar {bulkText.split("\n").filter(l => l.trim()).length} etapas
+                  </Button>
+                </div>
+              </div>
+            </Modal>
+
             {etapas.length === 0 ? (
               <p className="font-dm text-xs text-[var(--text-tertiary)] text-center py-4">
                 Nenhuma etapa. Adicione aulas, leituras ou exercícios.
@@ -746,7 +829,6 @@ function CursoCard({ grad, onUpdate }: { grad: Graduacao; onUpdate: () => void }
                     etapa={etapa}
                     index={idx}
                     total={etapas.length}
-                    onToggle={() => updateEtapa(etapa.id, { concluida: !etapa.concluida })}
                     onUpdate={data => updateEtapa(etapa.id, data)}
                     onRemove={() => removeEtapa(etapa.id)}
                     onMove={dir => moveEtapa(idx, dir)}
@@ -761,14 +843,31 @@ function CursoCard({ grad, onUpdate }: { grad: Graduacao; onUpdate: () => void }
   );
 }
 
-function EtapaRow({ etapa, index, total, onToggle, onUpdate, onRemove, onMove }: {
+function EtapaRow({ etapa, index, total, onUpdate, onRemove, onMove }: {
   etapa: EtapaCurso; index: number; total: number;
-  onToggle: () => void; onUpdate: (data: Partial<EtapaCurso>) => void;
+  onUpdate: (data: Partial<EtapaCurso>) => void;
   onRemove: () => void; onMove: (dir: -1 | 1) => void;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const livros = etapa.tipo === "leitura" ? getBiblioteca() : [];
   const livroVinculado = etapa.biblioteca_id ? livros.find(l => l.id === etapa.biblioteca_id) : null;
+  const status = etapa.status || getStatusInicial(etapa.tipo);
+  const isDone = isStatusEtapaConcluido(status);
+  const isProgress = isStatusEtapaEmProgresso(status);
+  const statusOptions = STATUS_ETAPA_BY_TIPO[etapa.tipo] || [];
+
+  const cycleStatus = () => {
+    const idx = statusOptions.findIndex(s => s.value === status);
+    const next = statusOptions[(idx + 1) % statusOptions.length];
+    onUpdate({ status: next.value, concluida: isStatusEtapaConcluido(next.value) });
+  };
+
+  const setStatusValue = (val: string) => {
+    onUpdate({ status: val, concluida: isStatusEtapaConcluido(val) });
+  };
+
+  const statusColor = isDone ? "#10b981" : isProgress ? "#3b82f6" : "var(--text-tertiary)";
+  const statusBg = isDone ? "rgba(16,185,129,.1)" : isProgress ? "rgba(59,130,246,.1)" : "var(--bg-hover)";
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-input)", border: "1px solid var(--border-subtle)" }}>
       <div className="flex items-center gap-2 p-2.5">
@@ -782,21 +881,31 @@ function EtapaRow({ etapa, index, total, onToggle, onUpdate, onRemove, onMove }:
             <ChevronDown size={10} className="text-[var(--text-tertiary)]" />
           </button>
         </div>
-        <button onClick={onToggle} className="shrink-0 hover:scale-110 transition-transform">
-          {etapa.concluida
+        <button onClick={cycleStatus} className="shrink-0 hover:scale-110 transition-transform" title="Clique para mudar status">
+          {isDone
             ? <CheckCircle2 size={18} className="text-[#10b981]" />
-            : <Circle size={18} className="text-[var(--text-tertiary)]" />
+            : isProgress
+              ? <Circle size={18} className="text-[#3b82f6] fill-[#3b82f6]" style={{ fillOpacity: 0.3 }} />
+              : <Circle size={18} className="text-[var(--text-tertiary)]" />
           }
         </button>
         <span className="shrink-0 text-[var(--text-tertiary)]">{ETAPA_ICONS[etapa.tipo]}</span>
-        <input
-          value={etapa.titulo || (livroVinculado ? livroVinculado.titulo : "")}
-          onChange={e => onUpdate({ titulo: e.target.value })}
-          placeholder={livroVinculado ? livroVinculado.titulo : `${LABEL_TIPO_ETAPA[etapa.tipo]} ${index + 1}`}
-          className={`flex-1 bg-transparent text-sm font-dm outline-none ${
-            etapa.concluida ? "line-through text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
-          }`}
-        />
+        <div className="flex-1 min-w-0">
+          <input
+            value={etapa.titulo || (livroVinculado ? livroVinculado.titulo : "")}
+            onChange={e => onUpdate({ titulo: e.target.value })}
+            placeholder={livroVinculado ? livroVinculado.titulo : `${LABEL_TIPO_ETAPA[etapa.tipo]} ${index + 1}`}
+            className={`w-full bg-transparent text-sm font-dm outline-none ${
+              isDone ? "line-through text-[var(--text-tertiary)]" : "text-[var(--text-primary)]"
+            }`}
+          />
+          {(isProgress || etapa.posicao) && etapa.posicao && (
+            <span className="font-mono text-[10px] text-[#3b82f6]">parado em {etapa.posicao}</span>
+          )}
+        </div>
+        <span className="shrink-0 px-1.5 py-0.5 rounded-md text-[9px] font-dm font-medium hidden sm:inline" style={{ background: statusBg, color: statusColor }}>
+          {statusOptions.find(s => s.value === status)?.label || status}
+        </span>
         {livroVinculado && (
           <a href={`/forja/foco?atividade=academico-bk-${livroVinculado.id}`} onClick={e => e.stopPropagation()}
             className="shrink-0 p-1 rounded hover:bg-[var(--orange-glow)]" title="Pomodoro do livro">
@@ -816,6 +925,18 @@ function EtapaRow({ etapa, index, total, onToggle, onUpdate, onRemove, onMove }:
       </div>
       {showDetails && (
         <div className="px-3 pb-3 ml-12 space-y-2 border-t border-[var(--border-subtle)] pt-2">
+          <div>
+            <label className="font-dm text-[10px] text-[var(--text-tertiary)]">Status</label>
+            <select
+              value={status}
+              onChange={e => setStatusValue(e.target.value)}
+              className="input-hamilton w-full text-xs py-1.5"
+            >
+              {statusOptions.map(s => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </div>
           {etapa.tipo === "leitura" && livros.length > 0 && (
             <div>
               <label className="font-dm text-[10px] text-[var(--text-tertiary)]">Vincular a livro/artigo da biblioteca</label>
@@ -833,13 +954,22 @@ function EtapaRow({ etapa, index, total, onToggle, onUpdate, onRemove, onMove }:
               </select>
             </div>
           )}
-          <input
-            type="number"
-            value={etapa.duracao_min ?? ""}
-            onChange={e => onUpdate({ duracao_min: e.target.value ? Number(e.target.value) : null })}
-            placeholder={etapa.tipo === "leitura" ? "Páginas" : "Duração (min)"}
-            className="input-hamilton w-full text-xs py-1.5"
-          />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="number"
+              value={etapa.duracao_min ?? ""}
+              onChange={e => onUpdate({ duracao_min: e.target.value ? Number(e.target.value) : null })}
+              placeholder={etapa.tipo === "leitura" ? "Total de páginas" : "Duração total (min)"}
+              className="input-hamilton w-full text-xs py-1.5"
+            />
+            <input
+              type="text"
+              value={etapa.posicao || ""}
+              onChange={e => onUpdate({ posicao: e.target.value })}
+              placeholder={etapa.tipo === "leitura" ? "Parado em (pág X)" : "Parado em (15min)"}
+              className="input-hamilton w-full text-xs py-1.5"
+            />
+          </div>
           <textarea
             value={etapa.anotacoes}
             onChange={e => onUpdate({ anotacoes: e.target.value })}

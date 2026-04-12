@@ -650,17 +650,42 @@ export function calcularCRGraduacao(graduacaoId: string) {
 // GRADUAÇÕES
 // ═══════════════════════════════════════════════════
 
+// Map old etapa "concluida" boolean to new status string
+function migrateEtapaStatus(e: any): string {
+  if (e.status) return e.status;
+  if (e.concluida) {
+    // map by tipo
+    const map: Record<string, string> = {
+      aula: "assistido", leitura: "lido", exercicio: "feito",
+      projeto: "concluido", outro: "concluido",
+    };
+    return map[e.tipo] || "concluido";
+  }
+  const initial: Record<string, string> = {
+    aula: "nao_assistido", leitura: "nao_lido", exercicio: "nao_feito",
+    projeto: "nao_iniciado", outro: "nao_iniciado",
+  };
+  return initial[e.tipo] || "nao_iniciado";
+}
+
 export function getGraduacoes(): Graduacao[] {
   return load<Graduacao>(KEYS.graduacoes, []).map(g => ({
     ...g,
     tipo: (g as any).tipo || "graduacao",
     ativa: (g as any).ativa ?? true,
     link: (g as any).link || "",
-    etapas: ((g as any).etapas || []).map((e: any, i: number) => ({
-      ...e,
-      ordem: e.ordem ?? i,
-      biblioteca_id: e.biblioteca_id || "",
-    })),
+    status_curso: (g as any).status_curso || "nao_iniciado",
+    etapas: ((g as any).etapas || []).map((e: any, i: number) => {
+      const status = migrateEtapaStatus(e);
+      return {
+        ...e,
+        ordem: e.ordem ?? i,
+        biblioteca_id: e.biblioteca_id || "",
+        status,
+        concluida: ["assistido", "assistido_resumido", "lido", "lido_resumido", "feito", "feito_corrigido", "concluido"].includes(status),
+        posicao: e.posicao || "",
+      };
+    }),
     anotacoes_gerais: (g as any).anotacoes_gerais || "",
     pomodoros_realizados: (g as any).pomodoros_realizados || 0,
     tempo_total_seg: (g as any).tempo_total_seg || 0,
