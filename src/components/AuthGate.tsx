@@ -1,72 +1,45 @@
 "use client";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Lock, Eye, EyeOff, LogIn } from "lucide-react";
-
-const AUTH_KEY = "meu-consultorio-auth";
-const SETUP_KEY = "meu-consultorio-setup";
-
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + "__meu_consultorio_salt__");
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+import { Lock, Eye, EyeOff, LogIn, LogOut } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [needsSetup, setNeedsSetup] = useState(false);
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem(AUTH_KEY);
-    const setup = localStorage.getItem(SETUP_KEY);
-    if (token && setup) {
-      setAuthenticated(true);
-    } else if (!setup) {
-      setNeedsSetup(true);
-      setAuthenticated(false);
-    } else {
-      setAuthenticated(false);
-    }
-  }, []);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setAuthenticated(!!session);
+    });
 
-  const handleSetup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    if (password.length < 4) {
-      setError("Senha deve ter pelo menos 4 caracteres");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError("As senhas não coincidem");
-      return;
-    }
-    setLoading(true);
-    const hash = await hashPassword(password);
-    localStorage.setItem(SETUP_KEY, hash);
-    localStorage.setItem(AUTH_KEY, "true");
-    setAuthenticated(true);
-    setLoading(false);
-  };
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthenticated(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const hash = await hashPassword(password);
-    const stored = localStorage.getItem(SETUP_KEY);
-    if (hash === stored) {
-      localStorage.setItem(AUTH_KEY, "true");
-      setAuthenticated(true);
-    } else {
-      setError("Senha incorreta");
+
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (authError) {
+      setError(
+        authError.message === "Invalid login credentials"
+          ? "Email ou senha incorretos"
+          : authError.message
+      );
     }
     setLoading(false);
   };
@@ -115,13 +88,34 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
               className="text-sm mt-1"
               style={{ color: "var(--text-tertiary)" }}
             >
-              {needsSetup
-                ? "Crie uma senha para proteger seus dados"
-                : "Digite sua senha para acessar"}
+              Faça login para acessar seus dados
             </p>
           </div>
 
-          <form onSubmit={needsSetup ? handleSetup : handleLogin} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label
+                className="block text-xs font-medium mb-1.5"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError(""); }}
+                placeholder="seu@email.com"
+                autoFocus
+                autoComplete="email"
+                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none transition-all"
+                style={{
+                  background: "var(--bg-input)",
+                  border: "1px solid var(--border-default)",
+                  color: "var(--text-primary)",
+                }}
+              />
+            </div>
+
             <div>
               <label
                 className="block text-xs font-medium mb-1.5"
@@ -135,7 +129,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                   value={password}
                   onChange={(e) => { setPassword(e.target.value); setError(""); }}
                   placeholder="••••••••"
-                  autoFocus
+                  autoComplete="current-password"
                   className="w-full px-3 py-2.5 rounded-xl text-sm outline-none transition-all"
                   style={{
                     background: "var(--bg-input)",
@@ -154,29 +148,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
               </div>
             </div>
 
-            {needsSetup && (
-              <div>
-                <label
-                  className="block text-xs font-medium mb-1.5"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  Confirmar senha
-                </label>
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={confirmPassword}
-                  onChange={(e) => { setConfirmPassword(e.target.value); setError(""); }}
-                  placeholder="••••••••"
-                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none transition-all"
-                  style={{
-                    background: "var(--bg-input)",
-                    border: "1px solid var(--border-default)",
-                    color: "var(--text-primary)",
-                  }}
-                />
-              </div>
-            )}
-
             {error && (
               <p className="text-xs text-red-500 text-center">{error}</p>
             )}
@@ -188,7 +159,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
               style={{ background: "linear-gradient(135deg, #C84B31, #DA6C34)" }}
             >
               <LogIn size={16} />
-              {loading ? "Aguarde..." : needsSetup ? "Criar senha e entrar" : "Entrar"}
+              {loading ? "Entrando..." : "Entrar"}
             </button>
           </form>
         </div>
@@ -197,9 +168,14 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           className="text-center text-xs mt-4"
           style={{ color: "var(--text-tertiary)" }}
         >
-          Dados protegidos localmente
+          Dados protegidos com Supabase Auth + RLS
         </p>
       </motion.div>
     </div>
   );
+}
+
+/** Logout function — can be called from anywhere */
+export async function logout() {
+  await supabase.auth.signOut();
 }

@@ -11,8 +11,9 @@ import { initAcademicoSync } from "@/lib/academico-data";
 import { initForjaSync } from "@/lib/forja-data";
 import { initUsinaSync } from "@/lib/usina-data";
 import { initConteudoSync } from "@/lib/conteudo-data";
+import { supabase } from "@/lib/supabase";
 
-const FIXED_USER_ID = process.env.NEXT_PUBLIC_USER_ID || "00000000-0000-0000-0000-000000000001";
+const FALLBACK_USER_ID = process.env.NEXT_PUBLIC_USER_ID || "00000000-0000-0000-0000-000000000001";
 
 const SHORTCUTS = [
   { key: "n", label: "Nova atividade / Agenda", route: "/agenda" },
@@ -76,13 +77,16 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [dataReady, setDataReady] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      initializeData(FIXED_USER_ID),
-      initAcademicoSync(),
-      initForjaSync(),
-      initUsinaSync(),
-      initConteudoSync(),
-    ]).then(() => setDataReady(true)).catch(() => setDataReady(true));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const userId = session?.user?.id || FALLBACK_USER_ID;
+      return Promise.all([
+        initializeData(userId),
+        initAcademicoSync(),
+        initForjaSync(),
+        initUsinaSync(),
+        initConteudoSync(),
+      ]);
+    }).then(() => setDataReady(true)).catch(() => setDataReady(true));
   }, []);
 
   const handleGlobalKeydown = useCallback(

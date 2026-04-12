@@ -8,7 +8,17 @@
 
 import { supabase } from "./supabase";
 
-const USER_ID = process.env.NEXT_PUBLIC_USER_ID || "00000000-0000-0000-0000-000000000001";
+function getUserId(): string {
+  // Try to get from Supabase Auth session first
+  try {
+    const raw = localStorage.getItem("sb-qniyqmszqmqetimfrljf-auth-token");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.user?.id) return parsed.user.id;
+    }
+  } catch {}
+  return process.env.NEXT_PUBLIC_USER_ID || "00000000-0000-0000-0000-000000000001";
+}
 const TS_PREFIX = "__sync_ts:";
 
 let _synced = false;
@@ -40,7 +50,7 @@ export async function initSync(keys: string[]): Promise<void> {
     const { data, error } = await supabase
       .from("kv_store")
       .select("key, value, updated_at")
-      .eq("user_id", USER_ID)
+      .eq("user_id", getUserId())
       .in("key", keys);
 
     if (error) throw error;
@@ -62,7 +72,7 @@ export async function initSync(keys: string[]): Promise<void> {
             const localData = localStorage.getItem(row.key);
             if (localData) {
               supabase.from("kv_store").upsert({
-                user_id: USER_ID,
+                user_id: getUserId(),
                 key: row.key,
                 value: JSON.parse(localData),
                 updated_at: new Date(localTs).toISOString(),
@@ -83,7 +93,7 @@ export async function initSync(keys: string[]): Promise<void> {
             const parsed = JSON.parse(localData);
             if (Array.isArray(parsed) ? parsed.length > 0 : Object.keys(parsed).length > 0) {
               supabase.from("kv_store").upsert({
-                user_id: USER_ID,
+                user_id: getUserId(),
                 key,
                 value: parsed,
                 updated_at: new Date().toISOString(),
@@ -115,7 +125,7 @@ export function syncSave<T>(key: string, data: T): void {
   // Push to Supabase in background
   if (_useRemote) {
     supabase.from("kv_store").upsert({
-      user_id: USER_ID,
+      user_id: getUserId(),
       key,
       value: data as any,
       updated_at: new Date().toISOString(),
