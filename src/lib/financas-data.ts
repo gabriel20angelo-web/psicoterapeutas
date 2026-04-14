@@ -56,11 +56,42 @@ export interface Pendencia {
   notas?: string;
 }
 
+export type DirecaoEmprestimo = "emprestei" | "peguei";
+
+export interface PagamentoEmprestimo {
+  id: number;
+  data: string;
+  valor: number;
+  tx_id?: number;
+  notas?: string;
+}
+
+export interface Emprestimo {
+  id: number;
+  direcao: DirecaoEmprestimo;
+  pessoa: string;
+  valor_original: number;
+  data: string;
+  prazo?: string;
+  status: "aberto" | "quitado";
+  pagamentos: PagamentoEmprestimo[];
+  notas?: string;
+  cat?: string;
+  pay?: string;
+}
+
+export interface Orcamento {
+  cat: string;
+  limite: number;
+}
+
 export interface FinancasData {
   cats: Categoria[];
   txs: Transacao[];
   fixos: FixoItem[];
   pendencias: Pendencia[];
+  emprestimos: Emprestimo[];
+  orcamentos: Orcamento[];
 }
 
 const KEYS = {
@@ -68,6 +99,8 @@ const KEYS = {
   txs: "fin:txs",
   fixos: "fin:fixos",
   pendencias: "fin:pendencias",
+  emprestimos: "fin:emprestimos",
+  orcamentos: "fin:orcamentos",
 };
 
 const CATS_SEED: Categoria[] = [
@@ -92,6 +125,8 @@ export function getFinancas(): FinancasData {
     txs: syncLoad<Transacao[]>(KEYS.txs, []),
     fixos: syncLoad<FixoItem[]>(KEYS.fixos, []),
     pendencias: syncLoad<Pendencia[]>(KEYS.pendencias, []),
+    emprestimos: syncLoad<Emprestimo[]>(KEYS.emprestimos, []),
+    orcamentos: syncLoad<Orcamento[]>(KEYS.orcamentos, []),
   };
 }
 
@@ -99,6 +134,56 @@ export function saveCats(cats: Categoria[]) { syncSave(KEYS.cats, cats); }
 export function saveTxs(txs: Transacao[]) { syncSave(KEYS.txs, txs); }
 export function saveFixos(fixos: FixoItem[]) { syncSave(KEYS.fixos, fixos); }
 export function savePendencias(p: Pendencia[]) { syncSave(KEYS.pendencias, p); }
+export function saveEmprestimos(e: Emprestimo[]) { syncSave(KEYS.emprestimos, e); }
+export function saveOrcamentos(o: Orcamento[]) { syncSave(KEYS.orcamentos, o); }
+
+// ─── Empréstimo helpers ───
+
+export function emprestimoPago(e: Emprestimo): number {
+  return e.pagamentos.reduce((a, p) => a + p.valor, 0);
+}
+export function emprestimoRestante(e: Emprestimo): number {
+  return Math.max(0, e.valor_original - emprestimoPago(e));
+}
+export function emprestimoPct(e: Emprestimo): number {
+  if (e.valor_original <= 0) return 0;
+  return Math.min(100, (emprestimoPago(e) / e.valor_original) * 100);
+}
+
+/** Cria transação para um pagamento/recebimento de empréstimo. */
+export function pagamentoEmprestimoToTx(e: Emprestimo, p: PagamentoEmprestimo): Transacao {
+  const entrada = e.direcao === "emprestei";
+  return {
+    id: nextId(),
+    desc: `Empréstimo ${e.direcao === "emprestei" ? "recebido de" : "pago a"} ${e.pessoa}`,
+    val: p.valor,
+    date: p.data,
+    type: entrada ? "entrada" : "variavel",
+    cat: e.cat || "Outros",
+    pay: e.pay || "pix",
+    parc: null,
+    pg: null,
+  };
+}
+
+// ─── Orçamento helpers ───
+
+export function gastosPorCategoriaMes(
+  data: { txs: Transacao[]; fixos: FixoItem[] }, y: number, m: number
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  const reais = data.txs.filter((t) => {
+    const d = new Date(t.date + "T12:00:00");
+    return d.getFullYear() === y && d.getMonth() === m && !isEntrada(t.type);
+  });
+  for (const t of reais) out[t.cat || "Outros"] = (out[t.cat || "Outros"] || 0) + t.val;
+  // Include fixos (virtuais)
+  for (const f of data.fixos) {
+    if (f.active === false || f.type !== "fixo") continue;
+    out[f.cat || "Outros"] = (out[f.cat || "Outros"] || 0) + f.val;
+  }
+  return out;
+}
 
 // ─── Pendência helpers ───
 

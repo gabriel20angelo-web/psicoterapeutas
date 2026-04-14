@@ -9,10 +9,11 @@ import Shell from "@/components/Shell";
 import EmptyState from "@/components/ui/EmptyState";
 import PendenciasTab from "@/components/financas/PendenciasTab";
 import {
-  getFinancas, saveCats, saveTxs, saveFixos, savePendencias,
+  getFinancas, saveCats, saveTxs, saveFixos, savePendencias, saveEmprestimos, saveOrcamentos,
   MESES, fmtBRL, fmtDiaMes, labelPay, isEntrada, lancamentosDoMes, nextId,
-  resumoPendencias, pendenciaToTx, hojeISO,
+  resumoPendencias, pendenciaToTx, hojeISO, pagamentoEmprestimoToTx, gastosPorCategoriaMes,
   type FinancasData, type Transacao, type FixoItem, type Categoria, type TxType, type Pendencia,
+  type Emprestimo, type PagamentoEmprestimo, type Orcamento,
 } from "@/lib/financas-data";
 
 type TabId = "lancamentos" | "fixos" | "pendencias" | "categorias" | "graficos" | "projecao";
@@ -49,7 +50,7 @@ export default function FinancasPage() {
 }
 
 function FinancasInner() {
-  const [data, setData] = useState<FinancasData>({ cats: [], txs: [], fixos: [], pendencias: [] });
+  const [data, setData] = useState<FinancasData>({ cats: [], txs: [], fixos: [], pendencias: [], emprestimos: [], orcamentos: [] });
   const [tab, setTab] = useState<TabId>("lancamentos");
   const [mY, setMY] = useState(() => new Date().getFullYear());
   const [mM, setMM] = useState(() => new Date().getMonth());
@@ -71,6 +72,8 @@ function FinancasInner() {
       if (next.txs) saveTxs(next.txs);
       if (next.fixos) saveFixos(next.fixos);
       if (next.pendencias) savePendencias(next.pendencias);
+      if (next.emprestimos) saveEmprestimos(next.emprestimos);
+      if (next.orcamentos) saveOrcamentos(next.orcamentos);
       return merged;
     });
   }
@@ -119,6 +122,8 @@ function FinancasInner() {
         if (d.txs && d.cats) {
           if (!d.fixos) d.fixos = [];
           if (!d.pendencias) d.pendencias = [];
+          if (!d.emprestimos) d.emprestimos = [];
+          if (!d.orcamentos) d.orcamentos = [];
           commit(d);
           alert("Importado com sucesso.");
         } else alert("Arquivo inválido.");
@@ -199,6 +204,41 @@ function FinancasInner() {
 
   const resumoPend = useMemo(() => resumoPendencias(data.pendencias), [data.pendencias]);
   const temAlerta = resumoPend.qtd_vencidas > 0 || resumoPend.qtd_proximas_7d > 0;
+
+  // ─── Empréstimos ───
+
+  function saveEmprestimosList(emprestimos: Emprestimo[]) {
+    commit({ emprestimos });
+  }
+
+  function registrarPagamentoEmprestimo(emprestimoId: number, pag: PagamentoEmprestimo) {
+    const e = data.emprestimos.find((x) => x.id === emprestimoId);
+    if (!e) return;
+    const tx = pagamentoEmprestimoToTx(e, pag);
+    const pagamentoComTx = { ...pag, tx_id: tx.id };
+    const newEmprestimos = data.emprestimos.map((x) => {
+      if (x.id !== emprestimoId) return x;
+      const novosPagamentos = [...x.pagamentos, pagamentoComTx];
+      const pago = novosPagamentos.reduce((a, p) => a + p.valor, 0);
+      return {
+        ...x,
+        pagamentos: novosPagamentos,
+        status: pago >= x.valor_original ? "quitado" as const : "aberto" as const,
+      };
+    });
+    commit({ txs: [...data.txs, tx], emprestimos: newEmprestimos });
+  }
+
+  // ─── Orçamentos ───
+
+  function saveOrcamentosList(orcamentos: Orcamento[]) {
+    commit({ orcamentos });
+  }
+
+  const gastosMesPorCat = useMemo(
+    () => gastosPorCategoriaMes(data, mY, mM),
+    [data, mY, mM]
+  );
 
   // ─── Categorias ───
   function addCat(n: string, c: string) {
@@ -370,10 +410,13 @@ function FinancasInner() {
       {tab === "pendencias" && (
         <PendenciasTab
           pendencias={data.pendencias}
+          emprestimos={data.emprestimos}
           cats={data.cats}
           cartoes={cartoesConhecidos}
           onSave={savePendenciasList}
+          onSaveEmprestimos={saveEmprestimosList}
           onQuitar={quitarPendencia}
+          onRegistrarPagamentoEmprestimo={registrarPagamentoEmprestimo}
         />
       )}
 
@@ -382,7 +425,15 @@ function FinancasInner() {
       )}
 
       {tab === "graficos" && (
-        <GraficosTab txs={txs} cats={data.cats} entradas={sum.entradas} gastos={sum.gastos} />
+        <GraficosTab
+          txs={txs}
+          cats={data.cats}
+          entradas={sum.entradas}
+          gastos={sum.gastos}
+          orcamentos={data.orcamentos}
+          gastosPorCat={gastosMesPorCat}
+          onSaveOrcamentos={saveOrcamentosList}
+        />
       )}
 
       {tab === "projecao" && (
@@ -663,9 +714,15 @@ function FixosTab({
       </p>
 
       <div className="rounded-xl p-5 mb-5"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
-        <p className="font-dm text-xs font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
-          {editing ? "✎ Editando item fixo" : "+ Novo item fixo"}
+        style={{
+          background: "var(--bg-card)",
+          border: `1px solid ${type === "entrada_fixa" ? "rgba(16,185,129,.25)" : "var(--border-default)"}`,
+        }}>
+        <p className="font-dm text-xs font-semibold mb-4"
+          style={{ color: type === "entrada_fixa" ? "#10b981" : "var(--text-primary)" }}>
+          {editing
+            ? (type === "entrada_fixa" ? "✎ Editando entrada mensal" : "✎ Editando gasto fixo")
+            : (type === "entrada_fixa" ? "+ Nova entrada mensal" : "+ Novo gasto fixo")}
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
           <Field label="Descrição">
@@ -699,8 +756,10 @@ function FixosTab({
         <div className="flex gap-2">
           <button onClick={handleSubmit}
             className="px-5 py-2.5 rounded-lg font-dm text-xs font-semibold text-white transition-all hover:brightness-110"
-            style={{ background: "var(--orange-500)" }}>
-            {editing ? "Salvar alterações" : "+ Adicionar fixo"}
+            style={{ background: type === "entrada_fixa" ? "#10b981" : "var(--orange-500)" }}>
+            {editing
+              ? "Salvar alterações"
+              : type === "entrada_fixa" ? "+ Adicionar entrada mensal" : "+ Adicionar gasto fixo"}
           </button>
           {editing && (
             <button onClick={onCancelEdit}
@@ -850,8 +909,16 @@ function CategoriasTab({
 // ─── Gráficos Tab ──────────────────────────────────
 
 function GraficosTab({
-  txs, cats, entradas, gastos,
-}: { txs: Transacao[]; cats: Categoria[]; entradas: number; gastos: number }) {
+  txs, cats, entradas, gastos, orcamentos, gastosPorCat, onSaveOrcamentos,
+}: {
+  txs: Transacao[];
+  cats: Categoria[];
+  entradas: number;
+  gastos: number;
+  orcamentos: Orcamento[];
+  gastosPorCat: Record<string, number>;
+  onSaveOrcamentos: (o: Orcamento[]) => void;
+}) {
   const byCat = useMemo(() => {
     const map = new Map<string, number>();
     txs.filter((t) => !isEntrada(t.type))
@@ -911,6 +978,157 @@ function GraficosTab({
         <div className="h-3" />
         <FlowBar label="Gastos" value={gastos} max={Math.max(entradas, gastos, 1)} color="#ef4444" />
       </div>
+
+      <OrcamentosCard
+        cats={cats}
+        orcamentos={orcamentos}
+        gastosPorCat={gastosPorCat}
+        onSave={onSaveOrcamentos}
+      />
+    </div>
+  );
+}
+
+function OrcamentosCard({
+  cats, orcamentos, gastosPorCat, onSave,
+}: {
+  cats: Categoria[];
+  orcamentos: Orcamento[];
+  gastosPorCat: Record<string, number>;
+  onSave: (o: Orcamento[]) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+
+  function startEdit() {
+    const d: Record<string, string> = {};
+    for (const o of orcamentos) d[o.cat] = String(o.limite);
+    setDraft(d);
+    setEditing(true);
+  }
+
+  function saveEdit() {
+    const novos: Orcamento[] = [];
+    for (const cat of Object.keys(draft)) {
+      const v = parseFloat(draft[cat]);
+      if (!isNaN(v) && v > 0) novos.push({ cat, limite: v });
+    }
+    onSave(novos);
+    setEditing(false);
+  }
+
+  const temOrcamento = orcamentos.length > 0;
+
+  return (
+    <div className="rounded-xl p-6"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border-default)" }}>
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
+        <p className="font-dm text-[11px] font-bold uppercase tracking-wider"
+          style={{ color: "var(--text-tertiary)" }}>
+          Orçamentos por categoria
+        </p>
+        {editing ? (
+          <div className="flex gap-2">
+            <button onClick={() => setEditing(false)}
+              className="px-3 py-1.5 rounded-md font-dm text-[11px]"
+              style={{ background: "var(--bg-hover)", color: "var(--text-secondary)", border: "1px solid var(--border-default)" }}>
+              Cancelar
+            </button>
+            <button onClick={saveEdit}
+              className="px-3 py-1.5 rounded-md font-dm text-[11px] font-semibold text-white"
+              style={{ background: "var(--orange-500)" }}>
+              Salvar
+            </button>
+          </div>
+        ) : (
+          <button onClick={startEdit}
+            className="px-3 py-1.5 rounded-md font-dm text-[11px] font-semibold"
+            style={{ background: "var(--orange-glow)", color: "var(--orange-500)", border: "1px solid var(--border-orange)" }}>
+            {temOrcamento ? "Editar limites" : "+ Definir limites"}
+          </button>
+        )}
+      </div>
+
+      {!editing && !temOrcamento && (
+        <p className="font-dm text-xs text-center py-4" style={{ color: "var(--text-tertiary)" }}>
+          Defina um limite mensal por categoria para ver o progresso aqui.
+        </p>
+      )}
+
+      {editing && (
+        <div className="space-y-2">
+          {cats.map((c) => (
+            <div key={c.n} className="flex items-center gap-3">
+              <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: c.c }} />
+              <span className="flex-1 font-dm text-xs" style={{ color: "var(--text-secondary)" }}>{c.n}</span>
+              <span className="font-dm text-[11px]" style={{ color: "var(--text-tertiary)" }}>R$</span>
+              <input
+                type="number"
+                value={draft[c.n] || ""}
+                onChange={(e) => setDraft({ ...draft, [c.n]: e.target.value })}
+                placeholder="0"
+                className="w-24 px-2 py-1.5 rounded-md font-mono text-xs outline-none"
+                style={{
+                  background: "var(--bg-input)",
+                  color: "var(--text-primary)",
+                  border: "1px solid var(--border-default)",
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!editing && temOrcamento && (
+        <div className="space-y-3">
+          {orcamentos.map((o) => {
+            const gasto = gastosPorCat[o.cat] || 0;
+            const pct = (gasto / o.limite) * 100;
+            const cor = cats.find((c) => c.n === o.cat)?.c || "#6b7280";
+            const estourado = pct > 100;
+            const proximo = pct > 80 && pct <= 100;
+            return (
+              <div key={o.cat}>
+                <div className="flex justify-between items-center mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ background: cor }} />
+                    <span className="font-dm text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+                      {o.cat}
+                    </span>
+                    {estourado && (
+                      <span className="font-dm text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+                        style={{ background: "rgba(239,68,68,.12)", color: "#ef4444" }}>
+                        Estourado
+                      </span>
+                    )}
+                    {proximo && (
+                      <span className="font-dm text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+                        style={{ background: "rgba(245,158,11,.12)", color: "#f59e0b" }}>
+                        Quase lá
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-mono text-[11px]"
+                    style={{ color: estourado ? "#ef4444" : "var(--text-secondary)" }}>
+                    R$ {fmtBRL(gasto)} / R$ {fmtBRL(o.limite)}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
+                  <div className="h-full transition-all"
+                    style={{
+                      width: `${Math.min(100, pct)}%`,
+                      background: estourado ? "#ef4444" : proximo ? "#f59e0b" : cor,
+                      opacity: 0.85,
+                    }} />
+                </div>
+                <div className="font-dm text-[10px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                  {pct.toFixed(0)}% usado{estourado && ` · excedido em R$ ${fmtBRL(gasto - o.limite)}`}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1078,7 +1296,7 @@ function TxModal({
   const isEdit = !!editTx;
   const typeOptions = mode === "gasto"
     ? [{ v: "variavel", l: "Variável" }, { v: "pontual", l: "Pontual" }]
-    : [{ v: "entrada", l: "Entrada regular" }];
+    : [{ v: "entrada", l: "Entrada pontual" }];
 
   const [desc, setDesc] = useState(editTx?.desc || "");
   const [val, setVal] = useState(editTx ? String(editTx.val) : "");
@@ -1116,8 +1334,14 @@ function TxModal({
           {isEdit ? `Editar ${gasto ? "gasto" : "entrada"}` : `${gasto ? "Novo gasto" : "Nova entrada"}`}
         </h2>
 
+        {!gasto && !isEdit && (
+          <p className="font-dm text-[10px] mb-3 px-3 py-2 rounded-lg"
+            style={{ background: "rgba(16,185,129,.06)", color: "var(--text-tertiary)", border: "1px dashed rgba(16,185,129,.25)" }}>
+            💡 Para entradas que se repetem todo mês (salário, aluguel recebido), use a aba <strong>Fixos</strong>.
+          </p>
+        )}
         <Field label="Descrição">
-          <Input value={desc} onChange={setDesc} placeholder="Ex: Salário, Almoço, Netflix..." autoFocus />
+          <Input value={desc} onChange={setDesc} placeholder={gasto ? "Ex: Almoço, Netflix..." : "Ex: Venda extra, reembolso..."} autoFocus />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Valor (R$)"><Input type="number" value={val} onChange={setVal} placeholder="0,00" /></Field>

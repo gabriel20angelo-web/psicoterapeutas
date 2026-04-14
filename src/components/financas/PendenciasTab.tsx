@@ -7,29 +7,35 @@ import {
 } from "lucide-react";
 import {
   type Pendencia, type Categoria, type PendenciaKind,
+  type Emprestimo, type PagamentoEmprestimo,
   fmtBRL, labelPay, isVencida, diasAteVencer, hojeISO, agruparDividas, nextId,
   type DividaGrupo,
 } from "@/lib/financas-data";
+import EmprestimosView from "./EmprestimosView";
 
-type Filtro = "todos" | "pagar" | "receber" | "dividas";
+type Filtro = "todos" | "pagar" | "receber" | "dividas" | "emprestimos";
 
 const FILTROS: { id: Filtro; label: string }[] = [
   { id: "todos", label: "Todos" },
   { id: "pagar", label: "A pagar" },
   { id: "receber", label: "A receber" },
   { id: "dividas", label: "Dívidas" },
+  { id: "emprestimos", label: "Empréstimos" },
 ];
 
 export interface PendenciasTabProps {
   pendencias: Pendencia[];
+  emprestimos: Emprestimo[];
   cats: Categoria[];
   cartoes: string[];
   onSave: (pendencias: Pendencia[]) => void;
+  onSaveEmprestimos: (e: Emprestimo[]) => void;
   onQuitar: (id: number, payDate: string) => void;
+  onRegistrarPagamentoEmprestimo: (emprestimoId: number, pag: PagamentoEmprestimo) => void;
 }
 
 export default function PendenciasTab({
-  pendencias, cats, cartoes, onSave, onQuitar,
+  pendencias, emprestimos, cats, cartoes, onSave, onSaveEmprestimos, onQuitar, onRegistrarPagamentoEmprestimo,
 }: PendenciasTabProps) {
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [modal, setModal] = useState<null | { editing: Pendencia | null; kind: PendenciaKind }>(null);
@@ -115,6 +121,7 @@ export default function PendenciasTab({
     pagar: pendencias.filter((p) => p.status === "aberto" && p.kind === "pagar").length,
     receber: pendencias.filter((p) => p.status === "aberto" && p.kind === "receber").length,
     dividas: dividas.length,
+    emprestimos: emprestimos.filter((e) => e.pagamentos.reduce((a, p) => a + p.valor, 0) < e.valor_original).length,
   };
 
   return (
@@ -170,7 +177,15 @@ export default function PendenciasTab({
         })}
       </div>
 
-      {filtro === "dividas" ? (
+      {filtro === "emprestimos" ? (
+        <EmprestimosView
+          emprestimos={emprestimos}
+          cats={cats}
+          cartoes={cartoes}
+          onSave={onSaveEmprestimos}
+          onRegistrarPagamento={onRegistrarPagamentoEmprestimo}
+        />
+      ) : filtro === "dividas" ? (
         <DividasView
           dividas={dividas}
           cats={cats}
