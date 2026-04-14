@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, Target, Plus, Pencil, Trash2, Check,
@@ -73,6 +73,15 @@ export default function MetasPage() {
   const [fazerMais, setFazerMais] = useState(config.fazer_mais.join("\n"));
   const [fazerMenos, setFazerMenos] = useState(config.fazer_menos.join("\n"));
   const [regrasAno, setRegrasAno] = useState(config.regras_do_ano.join("\n"));
+
+  // Sincroniza form de intenções com config ao abrir o modal — evita stale closure
+  useEffect(() => {
+    if (showIntencoesForm) {
+      setFazerMais(config.fazer_mais.join("\n"));
+      setFazerMenos(config.fazer_menos.join("\n"));
+      setRegrasAno(config.regras_do_ano.join("\n"));
+    }
+  }, [showIntencoesForm]);
 
   const metasAnuais = getMetasAnuais(ano);
   const metasMensais = getMetasMensais(ano, mesSelecionado);

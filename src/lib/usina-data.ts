@@ -375,16 +375,18 @@ export function createRascunho(texto: string): RascunhoRapido {
 export function updateRascunho(id: string, texto: string) {
   const items = load<RascunhoRapido>(KEYS.rascunhos, SEED_RASCUNHOS);
   const idx = items.findIndex(r => r.id === id);
-  if (idx !== -1) { items[idx].texto = texto; save(KEYS.rascunhos, items); }
+  if (idx !== -1) {
+    items[idx] = { ...items[idx], texto };
+    save(KEYS.rascunhos, items);
+  }
 }
 
 export function promoverRascunho(id: string): Conteudo | undefined {
   const items = load<RascunhoRapido>(KEYS.rascunhos, SEED_RASCUNHOS);
-  const rascunho = items.find(r => r.id === id);
-  if (!rascunho) return undefined;
-  const conteudo = createConteudo({ titulo: rascunho.texto.slice(0, 100), descricao: rascunho.texto });
-  rascunho.promovido = true;
-  rascunho.conteudo_id = conteudo.id;
+  const idx = items.findIndex(r => r.id === id);
+  if (idx === -1) return undefined;
+  const conteudo = createConteudo({ titulo: items[idx].texto.slice(0, 100), descricao: items[idx].texto });
+  items[idx] = { ...items[idx], promovido: true, conteudo_id: conteudo.id };
   save(KEYS.rascunhos, items);
   return conteudo;
 }

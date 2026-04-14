@@ -2,6 +2,10 @@
 
 import { syncSave, syncLoad, initSync } from "./sync";
 
+function uid(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
 // ─── TYPES ───
 
 export type Plataforma = "instagram" | "tiktok" | "youtube" | "linkedin" | "twitter";
@@ -344,7 +348,7 @@ export function createProjeto(data: Omit<Projeto, "id" | "data_criacao">): Proje
   const projetos = getProjetos();
   const novo: Projeto = {
     ...data,
-    id: `p-${Date.now()}`,
+    id: `p-${uid()}`,
     data_criacao: new Date().toISOString(),
   };
   projetos.unshift(novo);
@@ -393,7 +397,7 @@ export function saveRoteiro(roteiro: Roteiro): Roteiro {
   if (idx !== -1) {
     roteiros[idx] = roteiro;
   } else {
-    roteiros.push({ ...roteiro, id: roteiro.id || `rot-${Date.now()}` });
+    roteiros.push({ ...roteiro, id: roteiro.id || `rot-${uid()}` });
   }
   saveAllRoteiros(roteiros);
   return roteiro;
@@ -430,7 +434,7 @@ export function createReferencia(data: Omit<Referencia, "id" | "data_criacao">):
   const referencias = getReferencias();
   const nova: Referencia = {
     ...data,
-    id: `r-${Date.now()}`,
+    id: `r-${uid()}`,
     data_criacao: new Date().toISOString(),
   };
   referencias.unshift(nova);
@@ -445,16 +449,22 @@ export function deleteReferencia(id: string) {
 
 export function linkReferencia(referenciaId: string, projetoId: string) {
   const referencias = getReferencias();
-  const ref = referencias.find((r) => r.id === referenciaId);
-  if (ref && !ref.projeto_ids.includes(projetoId)) {
-    ref.projeto_ids.push(projetoId);
+  const refIdx = referencias.findIndex((r) => r.id === referenciaId);
+  if (refIdx !== -1 && !referencias[refIdx].projeto_ids.includes(projetoId)) {
+    referencias[refIdx] = {
+      ...referencias[refIdx],
+      projeto_ids: [...referencias[refIdx].projeto_ids, projetoId],
+    };
     saveReferencias(referencias);
   }
 
   const projetos = getProjetos();
-  const proj = projetos.find((p) => p.id === projetoId);
-  if (proj && !proj.referencia_ids.includes(referenciaId)) {
-    proj.referencia_ids.push(referenciaId);
+  const projIdx = projetos.findIndex((p) => p.id === projetoId);
+  if (projIdx !== -1 && !projetos[projIdx].referencia_ids.includes(referenciaId)) {
+    projetos[projIdx] = {
+      ...projetos[projIdx],
+      referencia_ids: [...projetos[projIdx].referencia_ids, referenciaId],
+    };
     saveProjetos(projetos);
   }
 }
@@ -479,7 +489,7 @@ export function createStoriesSequencia(data: Omit<StoriesSequencia, "id" | "data
   const stories = getStoriesSequencias();
   const nova: StoriesSequencia = {
     ...data,
-    id: `s-${Date.now()}`,
+    id: `s-${uid()}`,
     data_criacao: new Date().toISOString(),
   };
   stories.unshift(nova);
@@ -513,7 +523,7 @@ export function getChatMessages(): RoteiroMensagem[] {
 export function sendChatMessage(content: string): RoteiroMensagem[] {
   const msgs = getChatMessages();
   const userMsg: RoteiroMensagem = {
-    id: `msg-${Date.now()}`,
+    id: `msg-${uid()}`,
     role: "user",
     content,
     created_at: new Date().toISOString(),
@@ -522,7 +532,7 @@ export function sendChatMessage(content: string): RoteiroMensagem[] {
 
   const response = generateBotResponse(content);
   const botMsg: RoteiroMensagem = {
-    id: `msg-${Date.now() + 1}`,
+    id: `msg-${uid()}`,
     role: "assistant",
     content: response,
     created_at: new Date().toISOString(),
