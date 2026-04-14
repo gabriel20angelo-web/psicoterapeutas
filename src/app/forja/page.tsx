@@ -1493,7 +1493,7 @@ function AtividadeDetailPanel({
             type="text"
             value={titulo}
             onChange={(e) => setTitulo(e.target.value)}
-            onBlur={() => saveField("titulo", titulo)}
+            onBlur={(e) => saveField("titulo", e.currentTarget.value)}
             className="w-full px-3 py-2 rounded-lg font-dm text-sm border-none outline-none"
             style={{ background: "var(--bg-input)", color: "var(--text-primary)" }}
           />
@@ -1509,11 +1509,8 @@ function AtividadeDetailPanel({
               type="number"
               min={0}
               value={pomodorosEst}
-              onChange={(e) => {
-                const val = Number(e.target.value);
-                setPomodorosEst(val);
-                saveField("pomodoros_estimados", val);
-              }}
+              onChange={(e) => setPomodorosEst(Number(e.target.value))}
+              onBlur={(e) => saveField("pomodoros_estimados", Number(e.currentTarget.value))}
               className="w-20 px-3 py-2 rounded-lg font-dm text-sm border-none outline-none"
               style={{ background: "var(--bg-input)", color: "var(--text-primary)" }}
             />
@@ -1590,7 +1587,7 @@ function AtividadeDetailPanel({
           <textarea
             value={notas}
             onChange={(e) => setNotas(e.target.value)}
-            onBlur={() => saveField("notas", notas)}
+            onBlur={(e) => saveField("notas", e.currentTarget.value)}
             rows={3}
             className="w-full px-3 py-2 rounded-lg font-dm text-sm border-none outline-none resize-y"
             style={{ background: "var(--bg-input)", color: "var(--text-primary)" }}
@@ -1628,9 +1625,9 @@ function AtividadeDetailPanel({
                 type="number"
                 min={1}
                 value={recIntervalo}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  setRecIntervalo(val);
+                onChange={(e) => setRecIntervalo(Number(e.target.value))}
+                onBlur={(e) => {
+                  const val = Number(e.currentTarget.value);
                   saveField("recorrencia", { tipo: recTipo, intervalo: val });
                 }}
                 className="w-16 px-2 py-2 rounded-lg font-dm text-sm border-none outline-none text-center"
@@ -1809,6 +1806,19 @@ export default function ForjaPage() {
 
   useEffect(() => {
     reload();
+  }, [reload]);
+
+  // Re-sincroniza quando a aba volta a ser visível (ex: user vem de /forja/foco)
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", reload);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", reload);
+    };
   }, [reload]);
 
   // ── Handlers ──
