@@ -8,10 +8,7 @@ import {
   Zap,
   CheckSquare,
   Trophy,
-  Users,
   Calendar,
-  TrendingUp,
-  MessageCircle,
 } from "lucide-react";
 import Shell from "@/components/Shell";
 import ForjaNav from "@/components/forja/ForjaNav";
@@ -23,7 +20,6 @@ import {
   getAtividadesConcluidasHoje,
   getAtividadesConcluidasSemana,
   getDadosDiarios,
-  getComunidadeStats,
   getMetaDiaria,
   getDiasComFoco,
   formatTempo,
@@ -268,130 +264,6 @@ function MiniCalendar({ meta }: { meta: number }) {
           )}
         </div>
       )}
-    </motion.div>
-  );
-}
-
-/* ── Community Section ───────────────────────── */
-function CommunitySection() {
-  const raw = getComunidadeStats();
-  const meuTempo = getTempoFocadoHoje() / 60; // em minutos
-  const comunidade = {
-    ...raw,
-    topUsuarios: raw.topUsuarios.map((u, i) => ({ ...u, isCurrentUser: i === 2 })), // mock: 3rd user is "you"
-  };
-
-  return (
-    <motion.div
-      {...fadeUp(0.25)}
-      id="comunidade"
-      className="rounded-2xl p-6"
-      style={{
-        background: "var(--bg-card)",
-        border: "1px solid var(--border-default)",
-      }}
-    >
-      <div className="flex items-center gap-2 mb-4">
-        <Users size={16} style={{ color: "var(--orange-500)" }} />
-        <h2
-          className="font-fraunces font-semibold text-base"
-          style={{ color: "var(--text-primary)" }}
-        >
-          Comunidade
-        </h2>
-      </div>
-
-      {/* Average */}
-      <div
-        className="rounded-xl p-4 mb-4"
-        style={{ background: "var(--bg-input)" }}
-      >
-        <div className="flex items-center gap-2 mb-1">
-          <TrendingUp size={14} style={{ color: "var(--green-text)" }} />
-          <span
-            className="font-dm text-sm font-medium"
-            style={{ color: "var(--text-primary)" }}
-          >
-            Media de foco hoje
-          </span>
-        </div>
-        <p
-          className="font-fraunces font-bold text-xl"
-          style={{ color: "var(--orange-500)" }}
-        >
-          {formatTempo(comunidade.mediaGlobal * 60)}
-        </p>
-      </div>
-
-      {/* Top Users */}
-      <div className="space-y-2 mb-4">
-        {comunidade.topUsuarios.map((user, i) => (
-          <div
-            key={user.nome}
-            className="flex items-center justify-between py-2 px-3 rounded-lg"
-            style={{
-              background: user.isCurrentUser
-                ? "var(--orange-glow)"
-                : "transparent",
-            }}
-          >
-            <div className="flex items-center gap-3">
-              <span
-                className="font-dm text-xs font-bold w-5 text-center"
-                style={{
-                  color: user.isCurrentUser
-                    ? "var(--orange-500)"
-                    : "var(--text-tertiary)",
-                }}
-              >
-                {i + 1}
-              </span>
-              <span
-                className="font-dm text-sm"
-                style={{
-                  color: user.isCurrentUser
-                    ? "var(--orange-500)"
-                    : "var(--text-primary)",
-                  fontWeight: user.isCurrentUser ? 600 : 400,
-                }}
-              >
-                {user.nome}
-              </span>
-            </div>
-            <span
-              className="font-dm text-sm font-medium"
-              style={{
-                color: user.isCurrentUser
-                  ? "var(--orange-500)"
-                  : "var(--text-secondary)",
-              }}
-            >
-              {formatTempo(user.minutos * 60)}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* Motivational message */}
-      <div
-        className="rounded-xl p-4 flex items-start gap-3"
-        style={{
-          background: "var(--bg-input)",
-          border: "1px solid var(--border-default)",
-        }}
-      >
-        <MessageCircle
-          size={16}
-          className="mt-0.5 shrink-0"
-          style={{ color: "var(--orange-500)" }}
-        />
-        <p
-          className="font-dm text-sm italic"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          Continue focando! Cada sessão te aproxima dos seus objetivos.
-        </p>
-      </div>
     </motion.div>
   );
 }
@@ -643,10 +515,6 @@ export default function ForjaStatsPage() {
         </motion.div>
       )}
 
-      {/* Community Section */}
-      <div className="mb-6">
-        <CommunitySection />
-      </div>
     </Shell>
   );
 }

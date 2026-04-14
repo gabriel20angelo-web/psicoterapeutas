@@ -74,6 +74,11 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
     observacoes: paciente?.observacoes || '',
   });
   const [showNewSession, setShowNewSession] = useState(false);
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchConfig, setBatchConfig] = useState({
+    quantidade: 4,
+    recorrencia: 'semanal' as 'semanal' | 'quinzenal' | 'mensal',
+  });
   const [newSession, setNewSession] = useState(() => {
     const now = new Date();
     const hour = now.getHours();
@@ -195,32 +200,72 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
   };
   const [showInactiveConfirm, setShowInactiveConfirm] = useState(false);
   const toggleInactive = () => { updatePaciente(paciente.id, { status: paciente.status === 'ativo' ? 'inativo' : 'ativo' }); setShowInactiveConfirm(false); toast(paciente.status === 'ativo' ? 'Paciente inativado' : 'Paciente reativado', { type: 'success' }); forceUpdate(n => n + 1); };
+  const computeBatchDates = (): string[] => {
+    const dates: string[] = [];
+    const base = new Date(`${newSession.data}T${newSession.horaInicio}:00`);
+    if (isNaN(base.getTime())) return [];
+    const stepDays = batchConfig.recorrencia === 'semanal' ? 7
+      : batchConfig.recorrencia === 'quinzenal' ? 14 : 0;
+    for (let i = 0; i < batchConfig.quantidade; i++) {
+      const dt = new Date(base);
+      if (batchConfig.recorrencia === 'mensal') {
+        dt.setMonth(dt.getMonth() + i);
+      } else {
+        dt.setDate(dt.getDate() + stepDays * i);
+      }
+      dates.push(format(dt, 'yyyy-MM-dd'));
+    }
+    return dates;
+  };
+
   const handleCreateSession = () => {
     const startDt = new Date(`${newSession.data}T${newSession.horaInicio}:00`);
     const endDt = new Date(`${newSession.data}T${newSession.horaFim}:00`);
     if (isNaN(startDt.getTime()) || isNaN(endDt.getTime())) { toast("Data ou horário inválido", { type: "error" }); return; }
     if (endDt <= startDt) { toast("Horário de fim deve ser depois do início", { type: "error" }); return; }
-    // Check conflicts
+
+    const datasAlvo = batchMode ? computeBatchDates() : [newSession.data];
+    if (datasAlvo.length === 0) { toast("Nenhuma data gerada", { type: "error" }); return; }
+
     const allActs = getAtividades();
-    const conflict = allActs.find((a: any) => {
-      if (a.status === 'cancelada') return false;
-      const aStart = new Date(a.data_inicio).getTime();
-      const aEnd = new Date(a.data_fim).getTime();
-      return startDt.getTime() < aEnd && endDt.getTime() > aStart;
-    });
-    if (conflict && !confirm(`Conflito com "${conflict.titulo}". Criar mesmo assim?`)) return;
-    createAtividade({
-      terapeuta_id: profile?.id || '',
-      tipo: 'sessao',
-      titulo: `Sessão com ${paciente.nome}`,
-      data_inicio: `${newSession.data}T${newSession.horaInicio}:00`,
-      data_fim: `${newSession.data}T${newSession.horaFim}:00`,
-      status: newSession.status as any,
-      recorrencia: 'nenhuma',
-      paciente_id: paciente.id,
-      nota_pos_sessao: newSession.notas || undefined,
-    });
+    const conflitos: { data: string; titulo: string }[] = [];
+    for (const d of datasAlvo) {
+      const s = new Date(`${d}T${newSession.horaInicio}:00`).getTime();
+      const e = new Date(`${d}T${newSession.horaFim}:00`).getTime();
+      const conflict = allActs.find((a: any) => {
+        if (a.status === 'cancelada') return false;
+        const aStart = new Date(a.data_inicio).getTime();
+        const aEnd = new Date(a.data_fim).getTime();
+        return s < aEnd && e > aStart;
+      });
+      if (conflict) conflitos.push({ data: d, titulo: conflict.titulo });
+    }
+
+    if (conflitos.length > 0) {
+      const msg = conflitos.length === 1
+        ? `Conflito em ${conflitos[0].data} com "${conflitos[0].titulo}". Criar mesmo assim?`
+        : `${conflitos.length} conflitos detectados (${conflitos.slice(0, 3).map(c => c.data).join(', ')}${conflitos.length > 3 ? '…' : ''}). Criar todas mesmo assim?`;
+      if (!confirm(msg)) return;
+    }
+
+    let criadas = 0;
+    for (const d of datasAlvo) {
+      createAtividade({
+        terapeuta_id: profile?.id || '',
+        tipo: 'sessao',
+        titulo: `Sessão com ${paciente.nome}`,
+        data_inicio: `${d}T${newSession.horaInicio}:00`,
+        data_fim: `${d}T${newSession.horaFim}:00`,
+        status: newSession.status as any,
+        recorrencia: 'nenhuma',
+        paciente_id: paciente.id,
+        nota_pos_sessao: newSession.notas || undefined,
+      });
+      criadas++;
+    }
+
     setShowNewSession(false);
+    setBatchMode(false);
     const now = new Date();
     const hour = now.getHours();
     setNewSession({
@@ -230,7 +275,7 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
       status: 'pendente',
       notas: '',
     });
-    toast('Sessão criada com sucesso', { type: 'success' });
+    toast(criadas === 1 ? 'Sessão criada com sucesso' : `${criadas} sessões criadas com sucesso`, { type: 'success' });
     forceUpdate(n => n + 1);
   };
   const getMode = (sid: string): SessionMode => sessionModes[sid] || "texto";
@@ -444,7 +489,33 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
 
           {showNewSession && (
             <Card className="mb-4">
-              <h3 className="font-fraunces font-bold text-[var(--text-primary)] mb-4">Nova Sessão</h3>
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <h3 className="font-fraunces font-bold text-[var(--text-primary)]">
+                  {batchMode ? 'Nova série de sessões' : 'Nova Sessão'}
+                </h3>
+                <div className="flex gap-1 p-1 rounded-lg" style={{ background: 'var(--bg-input)' }}>
+                  <button
+                    onClick={() => setBatchMode(false)}
+                    className="px-3 py-1 rounded-md font-dm text-xs font-semibold transition-all"
+                    style={{
+                      background: !batchMode ? 'var(--bg-card)' : 'transparent',
+                      color: !batchMode ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    }}
+                  >
+                    Única
+                  </button>
+                  <button
+                    onClick={() => setBatchMode(true)}
+                    className="px-3 py-1 rounded-md font-dm text-xs font-semibold transition-all"
+                    style={{
+                      background: batchMode ? 'var(--bg-card)' : 'transparent',
+                      color: batchMode ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    }}
+                  >
+                    Em lote
+                  </button>
+                </div>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
                 <div>
                   <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-1">Data</label>
@@ -459,8 +530,63 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
                   <input type="time" value={newSession.horaFim} onChange={e => setNewSession(s => ({ ...s, horaFim: e.target.value }))} className="w-full px-3 py-2 rounded-xl font-dm text-sm bg-[var(--bg-input)] border border-[var(--border-strong)] text-[var(--text-primary)] outline-none focus:border-[var(--orange-500)] transition-colors" />
                 </div>
               </div>
+              {batchMode && (
+                <div className="mb-3 p-3 rounded-xl" style={{ background: 'var(--bg-input)', border: '1px dashed var(--border-strong)' }}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+                    <div>
+                      <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-1">Quantidade de sessões</label>
+                      <input
+                        type="number"
+                        min={2}
+                        max={52}
+                        value={batchConfig.quantidade}
+                        onChange={(e) => setBatchConfig((b) => ({ ...b, quantidade: Math.max(2, Math.min(52, parseInt(e.target.value) || 2)) }))}
+                        className="w-full px-3 py-2 rounded-xl font-dm text-sm bg-[var(--bg-card)] border border-[var(--border-strong)] text-[var(--text-primary)] outline-none focus:border-[var(--orange-500)] transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-1">Recorrência</label>
+                      <select
+                        value={batchConfig.recorrencia}
+                        onChange={(e) => setBatchConfig((b) => ({ ...b, recorrencia: e.target.value as any }))}
+                        className="w-full px-3 py-2 rounded-xl font-dm text-sm bg-[var(--bg-card)] border border-[var(--border-strong)] text-[var(--text-primary)] outline-none focus:border-[var(--orange-500)] transition-colors"
+                      >
+                        <option value="semanal">Semanal (a cada 7 dias)</option>
+                        <option value="quinzenal">Quinzenal (a cada 14 dias)</option>
+                        <option value="mensal">Mensal (mesmo dia do mês)</option>
+                      </select>
+                    </div>
+                  </div>
+                  {(() => {
+                    const datas = computeBatchDates();
+                    if (datas.length === 0) return null;
+                    return (
+                      <div className="mt-2">
+                        <p className="font-dm text-[10px] uppercase tracking-wider font-semibold text-[var(--text-tertiary)] mb-1.5">
+                          Serão criadas {datas.length} sessões:
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                          {datas.map((d) => (
+                            <span
+                              key={d}
+                              className="px-2 py-0.5 rounded-full font-mono text-[10px]"
+                              style={{
+                                background: 'var(--orange-glow)',
+                                color: 'var(--orange-500)',
+                                border: '1px solid var(--border-orange)',
+                              }}
+                            >
+                              {format(new Date(d + 'T12:00:00'), "dd/MM")}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
               <div className="mb-3">
-                <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-1">Status</label>
+                <label className="block font-dm text-xs font-medium text-[var(--text-secondary)] mb-1">Status {batchMode && '(todas as sessões)'}</label>
                 <select value={newSession.status} onChange={e => setNewSession(s => ({ ...s, status: e.target.value }))} className="w-full px-3 py-2 rounded-xl font-dm text-sm bg-[var(--bg-input)] border border-[var(--border-strong)] text-[var(--text-primary)] outline-none focus:border-[var(--orange-500)] transition-colors">
                   <option value="pendente">Pendente</option>
                   <option value="confirmada">Confirmada</option>
@@ -474,7 +600,9 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
                 <textarea value={newSession.notas} onChange={e => setNewSession(s => ({ ...s, notas: e.target.value }))} placeholder="Observações sobre a sessão..." rows={3} className="w-full px-3 py-2 rounded-xl font-dm text-sm bg-[var(--bg-input)] border border-[var(--border-strong)] text-[var(--text-primary)] outline-none focus:border-[var(--orange-500)] transition-colors placeholder:text-[var(--text-tertiary)] resize-y" />
               </div>
               <div className="flex justify-end">
-                <Button onClick={handleCreateSession}>Criar Sessão</Button>
+                <Button onClick={handleCreateSession}>
+                  {batchMode ? `Criar ${batchConfig.quantidade} sessões` : 'Criar Sessão'}
+                </Button>
               </div>
             </Card>
           )}
