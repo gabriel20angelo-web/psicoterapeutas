@@ -46,6 +46,19 @@ export default function ConteudoDetailPage() {
   const [showAddTarefa, setShowAddTarefa] = useState(false);
   const [novaTarefa, setNovaTarefa] = useState({ titulo: "", data_prevista: "", prioridade: "normal" as PrioridadeTarefa });
 
+  // Form states controlados para os campos principais.
+  // Sincronizados com `conteudo` via useEffect para permitir atualizações
+  // externas (ex: outra aba atualiza) sem perder a digitação em curso.
+  const [titulo, setTitulo] = useState("");
+  const [descricao, setDescricao] = useState("");
+  const [roteiro, setRoteiro] = useState("");
+  const [notas, setNotas] = useState("");
+  const [emoji, setEmoji] = useState("");
+  const [parceiro, setParceiro] = useState("");
+  const [dataPlanejada, setDataPlanejada] = useState("");
+  const [dataPublicacao, setDataPublicacao] = useState("");
+  const loadedIdRef = useRef<string | null>(null);
+
   const reload = useCallback(() => {
     const c = getConteudo(id);
     if (!c) { router.push("/conteudo/conteudos"); return; }
@@ -57,6 +70,22 @@ export default function ConteudoDetailPage() {
   }, [id, router]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  // Popula os campos controlados quando o conteudo é carregado pela primeira
+  // vez ou quando muda de ID. Re-save via handleFieldBlur não dispara reset.
+  useEffect(() => {
+    if (!conteudo) return;
+    if (loadedIdRef.current === conteudo.id) return;
+    loadedIdRef.current = conteudo.id;
+    setTitulo(conteudo.titulo || "");
+    setDescricao(conteudo.descricao || "");
+    setRoteiro(conteudo.roteiro || "");
+    setNotas(conteudo.notas || "");
+    setEmoji(conteudo.emoji_marcador || "");
+    setParceiro(conteudo.parceiro_publi || "");
+    setDataPlanejada(conteudo.data_planejada || "");
+    setDataPublicacao(conteudo.data_publicacao || "");
+  }, [conteudo]);
 
   const handleFieldBlur = (field: keyof Conteudo, value: string | boolean | null) => {
     if (!conteudo) return;
@@ -158,7 +187,8 @@ export default function ConteudoDetailPage() {
             {/* Title */}
             <input
               type="text"
-              defaultValue={conteudo.titulo}
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
               onBlur={(e) => handleFieldBlur("titulo", e.target.value)}
               className="w-full bg-transparent font-fraunces text-2xl md:text-3xl font-bold text-[var(--text-primary)] outline-none border-none placeholder:text-[var(--text-tertiary)] focus:ring-0"
               placeholder="Título do conteúdo..."
@@ -170,7 +200,8 @@ export default function ConteudoDetailPage() {
                 Descrição
               </label>
               <textarea
-                defaultValue={conteudo.descricao}
+                value={descricao}
+                onChange={(e) => setDescricao(e.target.value)}
                 onBlur={(e) => handleFieldBlur("descricao", e.target.value)}
                 rows={3}
                 className="w-full rounded-xl bg-[var(--bg-input)] border border-[var(--border-strong)] p-3 font-dm text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--orange-400)] transition-colors resize-none"
@@ -184,7 +215,8 @@ export default function ConteudoDetailPage() {
                 Roteiro
               </label>
               <textarea
-                defaultValue={conteudo.roteiro}
+                value={roteiro}
+                onChange={(e) => setRoteiro(e.target.value)}
                 onBlur={(e) => handleFieldBlur("roteiro", e.target.value)}
                 rows={14}
                 className="w-full rounded-xl bg-[var(--bg-input)] border border-[var(--border-strong)] p-4 font-dm text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--orange-400)] transition-colors resize-y leading-relaxed"
@@ -198,7 +230,8 @@ export default function ConteudoDetailPage() {
                 Notas
               </label>
               <textarea
-                defaultValue={conteudo.notas}
+                value={notas}
+                onChange={(e) => setNotas(e.target.value)}
                 onBlur={(e) => handleFieldBlur("notas", e.target.value)}
                 rows={4}
                 className="w-full rounded-xl bg-[var(--bg-input)] border border-[var(--border-strong)] p-3 font-dm text-sm text-[var(--text-secondary)] placeholder:text-[var(--text-tertiary)] outline-none focus:border-[var(--orange-400)] transition-colors resize-none"
@@ -232,7 +265,8 @@ export default function ConteudoDetailPage() {
                 <label className="block font-dm text-xs font-medium text-[var(--text-tertiary)] mb-1.5 uppercase tracking-wider">Data Planejada</label>
                 <input
                   type="date"
-                  defaultValue={conteudo.data_planejada || ""}
+                  value={dataPlanejada}
+                  onChange={(e) => setDataPlanejada(e.target.value)}
                   onBlur={(e) => handleFieldBlur("data_planejada", e.target.value || null)}
                   className="w-full rounded-xl bg-[var(--bg-input)] border border-[var(--border-strong)] px-3 py-2 font-dm text-sm text-[var(--text-primary)] outline-none focus:border-[var(--orange-400)]"
                 />
@@ -244,7 +278,8 @@ export default function ConteudoDetailPage() {
                   <label className="block font-dm text-xs font-medium text-[var(--text-tertiary)] mb-1.5 uppercase tracking-wider">Data Publicacao</label>
                   <input
                     type="date"
-                    defaultValue={conteudo.data_publicacao || ""}
+                    value={dataPublicacao}
+                    onChange={(e) => setDataPublicacao(e.target.value)}
                     onBlur={(e) => handleFieldBlur("data_publicacao", e.target.value || null)}
                     className="w-full rounded-xl bg-[var(--bg-input)] border border-[var(--border-strong)] px-3 py-2 font-dm text-sm text-[var(--text-primary)] outline-none focus:border-[var(--orange-400)]"
                   />
@@ -286,7 +321,8 @@ export default function ConteudoDetailPage() {
                 <label className="block font-dm text-xs font-medium text-[var(--text-tertiary)] mb-1.5 uppercase tracking-wider">Emoji Marcador</label>
                 <input
                   type="text"
-                  defaultValue={conteudo.emoji_marcador || ""}
+                  value={emoji}
+                  onChange={(e) => setEmoji(e.target.value)}
                   onBlur={(e) => handleFieldBlur("emoji_marcador", e.target.value || null)}
                   className="w-full rounded-xl bg-[var(--bg-input)] border border-[var(--border-strong)] px-3 py-2 font-dm text-sm text-[var(--text-primary)] outline-none focus:border-[var(--orange-400)]"
                   placeholder="Ex: 🔥"
@@ -312,7 +348,8 @@ export default function ConteudoDetailPage() {
                 {conteudo.is_publi && (
                   <input
                     type="text"
-                    defaultValue={conteudo.parceiro_publi || ""}
+                    value={parceiro}
+                    onChange={(e) => setParceiro(e.target.value)}
                     onBlur={(e) => handleFieldBlur("parceiro_publi", e.target.value || null)}
                     className="w-full rounded-xl bg-[var(--bg-input)] border border-[var(--border-strong)] px-3 py-2 font-dm text-sm text-[var(--text-primary)] outline-none focus:border-[var(--orange-400)]"
                     placeholder="Nome do parceiro"

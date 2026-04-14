@@ -23,8 +23,12 @@ import { useToast } from "@/contexts/ToastContext";
 import { saveSessionNote as saveSessionNoteLib } from "@/lib/notes";
 import type { Atividade } from "@/types/database";
 import { getAcademicoStats, getTarefasProximas as getAcTarefasProximas } from "@/lib/academico-data";
+import {
+  getFinancas, saldoReal, saldoLivre, resumoMensal, resumoPendencias,
+  fmtBRL, MESES as MESES_FIN,
+} from "@/lib/financas-data";
 import { getModulosAtivos } from "@/lib/modulos-config";
-import { GraduationCap } from "lucide-react";
+import { GraduationCap, Wallet } from "lucide-react";
 
 export default function DashboardPage() {
   const [, forceUpdate] = useState(0);
@@ -463,6 +467,83 @@ export default function DashboardPage() {
                       </span>
                     </div>
                   ))}
+                </div>
+              )}
+            </Card>
+          </motion.div>
+        );
+      })()}
+
+      {/* Finanças Widget */}
+      {(() => {
+        const finAtivo = getModulosAtivos().some(m => m.id === "financas");
+        if (!finAtivo) return null;
+        const finData = getFinancas();
+        const hasAnyData = finData.txs.length > 0 || finData.fixos.length > 0
+          || finData.pendencias.length > 0 || finData.caixinhas.length > 0;
+        if (!hasAnyData) return null;
+
+        const real = saldoReal(finData);
+        const livre = saldoLivre(finData);
+        const now2 = new Date();
+        const resumo = resumoMensal(finData, now2.getFullYear(), now2.getMonth());
+        const resumoPend = resumoPendencias(finData.pendencias);
+        const reservado = finData.caixinhas.filter(c => !c.arquivada).length;
+
+        return (
+          <motion.div {...staggerChild(6.2)}>
+            <Card className="mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Wallet size={18} className="text-[var(--orange-500)]" />
+                  <h2 className="font-fraunces font-bold text-lg text-[var(--text-primary)]">Finanças</h2>
+                </div>
+                <Link href="/financas" className="font-dm text-xs text-[var(--orange-500)] hover:underline flex items-center gap-1">
+                  Abrir <ArrowRight size={12} />
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
+                <div>
+                  <p className="font-dm text-[10px] uppercase tracking-wider font-semibold text-[var(--text-tertiary)]">Saldo real</p>
+                  <p className="font-fraunces text-xl" style={{ color: real >= 0 ? "var(--text-primary)" : "var(--red-text)" }}>
+                    R$ {fmtBRL(Math.abs(real))}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-dm text-[10px] uppercase tracking-wider font-semibold text-[var(--text-tertiary)]">Livre</p>
+                  <p className="font-fraunces text-xl" style={{ color: livre >= 0 ? "#10b981" : "var(--red-text)" }}>
+                    R$ {fmtBRL(Math.abs(livre))}
+                  </p>
+                  {reservado > 0 && (
+                    <p className="font-dm text-[9px] text-[var(--text-tertiary)]">{reservado} caixinhas</p>
+                  )}
+                </div>
+                <div>
+                  <p className="font-dm text-[10px] uppercase tracking-wider font-semibold text-[var(--text-tertiary)]">
+                    Disponível {MESES_FIN[now2.getMonth()].slice(0, 3)}
+                  </p>
+                  <p className="font-fraunces text-xl" style={{ color: "var(--orange-500)" }}>
+                    R$ {fmtBRL(resumo.disponivel)}
+                  </p>
+                  {resumo.dias_restantes > 0 && resumo.por_dia_restante > 0 && (
+                    <p className="font-dm text-[9px] text-[var(--text-tertiary)]">
+                      R$ {fmtBRL(resumo.por_dia_restante)}/dia · {resumo.dias_restantes}d
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {(resumoPend.qtd_vencidas > 0 || resumoPend.qtd_proximas_7d > 0) && (
+                <div className="flex items-center gap-2 px-2 py-1 rounded-lg mb-1"
+                  style={{
+                    background: resumoPend.qtd_vencidas > 0 ? "rgba(239,68,68,.08)" : "rgba(245,158,11,.08)",
+                  }}>
+                  <AlertTriangle size={12} style={{ color: resumoPend.qtd_vencidas > 0 ? "#ef4444" : "#f59e0b" }} />
+                  <span className="font-dm text-xs" style={{ color: resumoPend.qtd_vencidas > 0 ? "#ef4444" : "#f59e0b" }}>
+                    {resumoPend.qtd_vencidas > 0 && `${resumoPend.qtd_vencidas} pendência${resumoPend.qtd_vencidas > 1 ? "s" : ""} vencida${resumoPend.qtd_vencidas > 1 ? "s" : ""}`}
+                    {resumoPend.qtd_vencidas === 0 && `${resumoPend.qtd_proximas_7d} vence${resumoPend.qtd_proximas_7d > 1 ? "m" : ""} em 7 dias`}
+                  </span>
                 </div>
               )}
             </Card>

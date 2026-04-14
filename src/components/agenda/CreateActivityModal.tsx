@@ -12,6 +12,7 @@ import Textarea from "@/components/ui/Textarea";
 import SearchInput from "@/components/ui/SearchInput";
 import type { Atividade, TipoAtividade, Recorrencia, Paciente } from "@/types/database";
 import { getPacientes, createAtividade, getAtividades } from "@/lib/data";
+import { syncSave, syncLoad, initSync } from "@/lib/sync";
 import { hasConflict } from "@/lib/calendar-utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -32,17 +33,20 @@ const BASE_TIPOS: { value: string; label: string }[] = [
 ];
 
 const CUSTOM_TYPES_KEY = 'allos-custom-activity-types';
+// Sincroniza os tipos customizados via kv_store do Supabase
+if (typeof window !== 'undefined') {
+  initSync([CUSTOM_TYPES_KEY]);
+}
 
 function loadCustomTypes(): string[] {
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(CUSTOM_TYPES_KEY) || '[]'); } catch { return []; }
+  return syncLoad<string[]>(CUSTOM_TYPES_KEY, []);
 }
 
 function saveCustomType(name: string) {
   const existing = loadCustomTypes();
   if (!existing.includes(name)) {
-    existing.push(name);
-    localStorage.setItem(CUSTOM_TYPES_KEY, JSON.stringify(existing));
+    const next = [...existing, name];
+    syncSave(CUSTOM_TYPES_KEY, next);
   }
 }
 
@@ -265,7 +269,7 @@ export default function CreateActivityModal({ isOpen, onClose, onCreated, prefil
                   <button
                     onClick={() => {
                       const updated = customTypes.filter(x => x !== t);
-                      localStorage.setItem(CUSTOM_TYPES_KEY, JSON.stringify(updated));
+                      syncSave(CUSTOM_TYPES_KEY, updated);
                       setCustomTypes(updated);
                       if (tipo === `custom:${t}`) setTipo("pessoal");
                     }}
