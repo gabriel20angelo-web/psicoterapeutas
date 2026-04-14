@@ -35,16 +35,39 @@ export interface FixoItem {
   active: boolean;
 }
 
+export type PendenciaKind = "pagar" | "receber";
+export type PendenciaStatus = "aberto" | "quitado" | "cancelado";
+
+export interface Pendencia {
+  id: number;
+  kind: PendenciaKind;
+  desc: string;
+  val: number;
+  date_due: string;
+  cat: string;
+  pay: string;
+  status: PendenciaStatus;
+  quitado_em?: string;
+  tx_id?: number;
+  parc_num?: number;
+  parc_total?: number;
+  parent_id?: number;
+  credor?: string;
+  notas?: string;
+}
+
 export interface FinancasData {
   cats: Categoria[];
   txs: Transacao[];
   fixos: FixoItem[];
+  pendencias: Pendencia[];
 }
 
 const KEYS = {
   cats: "fin:cats",
   txs: "fin:txs",
   fixos: "fin:fixos",
+  pendencias: "fin:pendencias",
 };
 
 const CATS_SEED: Categoria[] = [
@@ -68,12 +91,138 @@ export function getFinancas(): FinancasData {
     cats: syncLoad<Categoria[]>(KEYS.cats, CATS_SEED),
     txs: syncLoad<Transacao[]>(KEYS.txs, []),
     fixos: syncLoad<FixoItem[]>(KEYS.fixos, []),
+    pendencias: syncLoad<Pendencia[]>(KEYS.pendencias, []),
   };
 }
 
 export function saveCats(cats: Categoria[]) { syncSave(KEYS.cats, cats); }
 export function saveTxs(txs: Transacao[]) { syncSave(KEYS.txs, txs); }
 export function saveFixos(fixos: FixoItem[]) { syncSave(KEYS.fixos, fixos); }
+export function savePendencias(p: Pendencia[]) { syncSave(KEYS.pendencias, p); }
+
+// ─── Pendência helpers ───
+
+export function hojeISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function isVencida(p: Pendencia): boolean {
+  return p.status === "aberto" && p.date_due < hojeISO();
+}
+
+export function diasAteVencer(p: Pendencia): number {
+  const due = new Date(p.date_due + "T12:00:00").getTime();
+  const now = new Date(hojeISO() + "T12:00:00").getTime();
+  return Math.round((due - now) / (1000 * 60 * 60 * 24));
+}
+
+export interface ResumoPendencias {
+  a_pagar_total: number;
+  a_receber_total: number;
+  a_pagar_30d: number;
+  a_receber_30d: number;
+  vencidos_pagar: number;
+  vencidos_receber: number;
+  qtd_vencidas: number;
+  qtd_proximas_7d: number;
+}
+
+export function resumoPendencias(pendencias: Pendencia[]): ResumoPendencias {
+  const hoje = hojeISO();
+  const d30 = new Date(); d30.setDate(d30.getDate() + 30);
+  const em30 = d30.toISOString().slice(0, 10);
+  const d7 = new Date(); d7.setDate(d7.getDate() + 7);
+  const em7 = d7.toISOString().slice(0, 10);
+  const r: ResumoPendencias = {
+    a_pagar_total: 0, a_receber_total: 0,
+    a_pagar_30d: 0, a_receber_30d: 0,
+    vencidos_pagar: 0, vencidos_receber: 0,
+    qtd_vencidas: 0, qtd_proximas_7d: 0,
+  };
+  for (const p of pendencias) {
+    if (p.status !== "aberto") continue;
+    if (p.kind === "pagar") r.a_pagar_total += p.val;
+    else r.a_receber_total += p.val;
+    if (p.date_due < hoje) {
+      r.qtd_vencidas++;
+      if (p.kind === "pagar") r.vencidos_pagar += p.val;
+      else r.vencidos_receber += p.val;
+    } else {
+      if (p.date_due <= em7) r.qtd_proximas_7d++;
+      if (p.date_due <= em30) {
+        if (p.kind === "pagar") r.a_pagar_30d += p.val;
+        else r.a_receber_30d += p.val;
+      }
+    }
+  }
+  return r;
+}
+
+/** Agrupa pendências parceladas (dívidas) por parent_id. */
+export interface DividaGrupo {
+  parent_id: number;
+  desc: string;
+  credor: string;
+  kind: PendenciaKind;
+  parcelas: Pendencia[];
+  total: number;
+  pago: number;
+  restante: number;
+  pct: number;
+  proxima?: Pendencia;
+}
+
+export function agruparDividas(pendencias: Pendencia[]): DividaGrupo[] {
+  const groups: Record<number, Pendencia[]> = {};
+  for (const p of pendencias) {
+    if (!p.parent_id || !p.parc_total || p.parc_total < 2) continue;
+    if (!groups[p.parent_id]) groups[p.parent_id] = [];
+    groups[p.parent_id].push(p);
+  }
+  const out: DividaGrupo[] = [];
+  for (const key of Object.keys(groups)) {
+    const parent_id = Number(key);
+    const parcelas = groups[parent_id];
+    parcelas.sort((a: Pendencia, b: Pendencia) => (a.parc_num || 0) - (b.parc_num || 0));
+    const total = parcelas.reduce((a: number, p: Pendencia) => a + p.val, 0);
+    const pago = parcelas
+      .filter((p: Pendencia) => p.status === "quitado")
+      .reduce((a: number, p: Pendencia) => a + p.val, 0);
+    const proxima = parcelas.find((p: Pendencia) => p.status === "aberto");
+    out.push({
+      parent_id,
+      desc: parcelas[0].desc.replace(/ \(\d+\/\d+\)$/, ""),
+      credor: parcelas[0].credor || "",
+      kind: parcelas[0].kind,
+      parcelas,
+      total,
+      pago,
+      restante: total - pago,
+      pct: total > 0 ? (pago / total) * 100 : 0,
+      proxima,
+    });
+  }
+  return out.sort((a, b) => {
+    if (!a.proxima && b.proxima) return 1;
+    if (a.proxima && !b.proxima) return -1;
+    return (a.proxima?.date_due || "").localeCompare(b.proxima?.date_due || "");
+  });
+}
+
+/** Cria transação realizada a partir de uma pendência (quitação). */
+export function pendenciaToTx(p: Pendencia, payDate: string): Transacao {
+  return {
+    id: nextId(),
+    desc: p.desc,
+    val: p.val,
+    date: payDate,
+    type: p.kind === "pagar" ? "variavel" : "entrada",
+    cat: p.cat,
+    pay: p.pay,
+    parc: p.parc_num && p.parc_total ? `${p.parc_num}/${p.parc_total}` : null,
+    pg: p.parent_id || null,
+  };
+}
 
 // ─── Helpers ───
 

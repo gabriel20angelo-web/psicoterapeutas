@@ -3,21 +3,24 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import {
   Wallet, Plus, Minus, ChevronLeft, ChevronRight,
-  Pencil, Trash2, Pause, Play, Download, Upload, Repeat,
+  Pencil, Trash2, Pause, Play, Download, Upload, Repeat, AlertCircle, Bell,
 } from "lucide-react";
 import Shell from "@/components/Shell";
 import EmptyState from "@/components/ui/EmptyState";
+import PendenciasTab from "@/components/financas/PendenciasTab";
 import {
-  getFinancas, saveCats, saveTxs, saveFixos,
+  getFinancas, saveCats, saveTxs, saveFixos, savePendencias,
   MESES, fmtBRL, fmtDiaMes, labelPay, isEntrada, lancamentosDoMes, nextId,
-  type FinancasData, type Transacao, type FixoItem, type Categoria, type TxType,
+  resumoPendencias, pendenciaToTx, hojeISO,
+  type FinancasData, type Transacao, type FixoItem, type Categoria, type TxType, type Pendencia,
 } from "@/lib/financas-data";
 
-type TabId = "lancamentos" | "fixos" | "categorias" | "graficos" | "projecao";
+type TabId = "lancamentos" | "fixos" | "pendencias" | "categorias" | "graficos" | "projecao";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "lancamentos", label: "Lançamentos" },
   { id: "fixos", label: "Fixos" },
+  { id: "pendencias", label: "Pendências" },
   { id: "categorias", label: "Categorias" },
   { id: "graficos", label: "Gráficos" },
   { id: "projecao", label: "Projeção" },
@@ -46,7 +49,7 @@ export default function FinancasPage() {
 }
 
 function FinancasInner() {
-  const [data, setData] = useState<FinancasData>({ cats: [], txs: [], fixos: [] });
+  const [data, setData] = useState<FinancasData>({ cats: [], txs: [], fixos: [], pendencias: [] });
   const [tab, setTab] = useState<TabId>("lancamentos");
   const [mY, setMY] = useState(() => new Date().getFullYear());
   const [mM, setMM] = useState(() => new Date().getMonth());
@@ -67,6 +70,7 @@ function FinancasInner() {
       if (next.cats) saveCats(next.cats);
       if (next.txs) saveTxs(next.txs);
       if (next.fixos) saveFixos(next.fixos);
+      if (next.pendencias) savePendencias(next.pendencias);
       return merged;
     });
   }
@@ -114,6 +118,7 @@ function FinancasInner() {
         const d = JSON.parse(String(e.target?.result));
         if (d.txs && d.cats) {
           if (!d.fixos) d.fixos = [];
+          if (!d.pendencias) d.pendencias = [];
           commit(d);
           alert("Importado com sucesso.");
         } else alert("Arquivo inválido.");
@@ -175,6 +180,25 @@ function FinancasInner() {
     if (!confirm("Remover este item fixo?")) return;
     commit({ fixos: data.fixos.filter((f) => f.id !== id) });
   }
+
+  // ─── Pendências ───
+
+  function savePendenciasList(pendencias: Pendencia[]) {
+    commit({ pendencias });
+  }
+
+  function quitarPendencia(id: number, payDate: string) {
+    const p = data.pendencias.find((x) => x.id === id);
+    if (!p) return;
+    const tx = pendenciaToTx(p, payDate);
+    const newPendencias = data.pendencias.map((x) =>
+      x.id === id ? { ...x, status: "quitado" as const, quitado_em: payDate, tx_id: tx.id } : x
+    );
+    commit({ txs: [...data.txs, tx], pendencias: newPendencias });
+  }
+
+  const resumoPend = useMemo(() => resumoPendencias(data.pendencias), [data.pendencias]);
+  const temAlerta = resumoPend.qtd_vencidas > 0 || resumoPend.qtd_proximas_7d > 0;
 
   // ─── Categorias ───
   function addCat(n: string, c: string) {
@@ -281,6 +305,45 @@ function FinancasInner() {
         })}
       </div>
 
+      {/* Alert banner */}
+      {temAlerta && (
+        <button
+          onClick={() => setTab("pendencias")}
+          className="w-full flex items-center gap-3 p-3.5 rounded-xl mb-4 text-left transition-all hover:brightness-105"
+          style={{
+            background: resumoPend.qtd_vencidas > 0 ? "rgba(239,68,68,.08)" : "rgba(245,158,11,.08)",
+            border: `1px solid ${resumoPend.qtd_vencidas > 0 ? "rgba(239,68,68,.25)" : "rgba(245,158,11,.25)"}`,
+          }}
+        >
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{
+              background: resumoPend.qtd_vencidas > 0 ? "rgba(239,68,68,.15)" : "rgba(245,158,11,.15)",
+              color: resumoPend.qtd_vencidas > 0 ? "#ef4444" : "#f59e0b",
+            }}>
+            {resumoPend.qtd_vencidas > 0 ? <AlertCircle size={16} /> : <Bell size={16} />}
+          </div>
+          <div className="flex-1 min-w-0">
+            {resumoPend.qtd_vencidas > 0 && (
+              <div className="font-dm text-xs font-semibold" style={{ color: "#ef4444" }}>
+                {resumoPend.qtd_vencidas} {resumoPend.qtd_vencidas === 1 ? "pendência vencida" : "pendências vencidas"}
+                {" · "}R$ {fmtBRL(resumoPend.vencidos_pagar + resumoPend.vencidos_receber)}
+              </div>
+            )}
+            {resumoPend.qtd_proximas_7d > 0 && (
+              <div className="font-dm text-xs" style={{ color: "var(--text-secondary)" }}>
+                {resumoPend.qtd_proximas_7d} {resumoPend.qtd_proximas_7d === 1 ? "vence" : "vencem"} nos próximos 7 dias
+              </div>
+            )}
+            <div className="font-dm text-[10px] mt-1" style={{ color: "var(--text-tertiary)" }}>
+              A pagar 30d: R$ {fmtBRL(resumoPend.a_pagar_30d)} · A receber 30d: R$ {fmtBRL(resumoPend.a_receber_30d)}
+            </div>
+          </div>
+          <span className="font-dm text-[10px] font-semibold" style={{ color: "var(--orange-500)" }}>
+            Ver →
+          </span>
+        </button>
+      )}
+
       {tab === "lancamentos" && (
         <LancamentosTab
           txs={txs}
@@ -301,6 +364,16 @@ function FinancasInner() {
           onSubmit={submitFixo}
           onToggle={toggleFixo}
           onDelete={deleteFixo}
+        />
+      )}
+
+      {tab === "pendencias" && (
+        <PendenciasTab
+          pendencias={data.pendencias}
+          cats={data.cats}
+          cartoes={cartoesConhecidos}
+          onSave={savePendenciasList}
+          onQuitar={quitarPendencia}
         />
       )}
 
@@ -904,13 +977,24 @@ function ProjecaoTab({ data, baseY, baseM }: { data: FinancasData; baseY: number
         const td = new Date(t.date + "T12:00:00");
         return td.getFullYear() === y && td.getMonth() === m && t.parc;
       });
+      const pendAbertas = data.pendencias.filter((p) => {
+        if (p.status !== "aberto") return false;
+        const pd = new Date(p.date_due + "T12:00:00");
+        return pd.getFullYear() === y && pd.getMonth() === m;
+      });
       const fixoItems = activeFixos.map((f) => ({
         desc: f.desc, val: f.val, parc: "⟳ fixo",
         isIn: f.type === "entrada_fixa",
       }));
+      const pendItems = pendAbertas.map((p) => ({
+        desc: p.desc, val: p.val,
+        parc: p.parc_num && p.parc_total ? `${p.parc_num}/${p.parc_total}` : (p.kind === "pagar" ? "⏳ a pagar" : "⏳ a receber"),
+        isIn: p.kind === "receber",
+      }));
       const items = [
         ...parcTxs.map((t) => ({ desc: t.desc, val: t.val, parc: t.parc!, isIn: isEntrada(t.type) })),
         ...fixoItems,
+        ...pendItems,
       ];
       if (items.length === 0) continue;
       let entradas = 0, gastos = 0;
