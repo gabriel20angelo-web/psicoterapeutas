@@ -17,6 +17,7 @@ import {
   resumoPendencias, pendenciaToTx, hojeISO, pagamentoEmprestimoToTx, gastosPorCategoriaMes,
   resumoMensal, totalReservado, saldoReal, saldoLivre, fixoMesKey,
   creditoTotalCartoes, dividaCartaoMes, dividaTotalCartoesMes, aplicarCategoriaCaixinhas,
+  reverterCategoriaCaixinhas, addMesesSemRollover,
   valorPagoPendencia, valorRestantePendencia,
   saldoPositivoCartao, faturaCartaoMes,
   type FinancasData, type Transacao, type FixoItem, type Categoria, type TxType, type Pendencia,
@@ -156,7 +157,9 @@ function FinancasInner() {
 
   function deleteTx(id: number) {
     if (!confirm("Excluir este lançamento?")) return;
-    commit({ txs: data.txs.filter((t) => t.id !== id) });
+    // Reverte movimentos auto-gerados por categoria vinculada
+    const newCaixinhas = reverterCategoriaCaixinhas(id, data.caixinhas);
+    commit({ txs: data.txs.filter((t) => t.id !== id), caixinhas: newCaixinhas });
   }
 
   function submitTx(form: TxForm) {
@@ -165,20 +168,31 @@ function FinancasInner() {
     let newTxs = [...data.txs];
     let newCaixinhas = data.caixinhas;
     if (editId) {
+      // Ao editar, reverter qualquer movimento auto-gerado antes de re-aplicar
+      newCaixinhas = reverterCategoriaCaixinhas(editId, newCaixinhas);
       newTxs = newTxs.map((t) => t.id === editId ? { ...t, desc, val, date, type, cat, pay } : t);
+      const editedTx = newTxs.find((t) => t.id === editId);
+      if (editedTx) {
+        newCaixinhas = aplicarCategoriaCaixinhas(editedTx, newCaixinhas);
+      }
     } else if (parcelado && parcelas > 1) {
-      const [y, m, d] = date.split("-").map(Number);
-      const gid = Date.now();
+      const gidBase = nextId();
+      const valParcBase = +(val / parcelas).toFixed(2);
       for (let i = 0; i < parcelas; i++) {
-        const dt = new Date(y, m - 1 + i, d);
+        // Última parcela absorve o resto para que soma == val original
+        const valParc = i === parcelas - 1
+          ? +(val - valParcBase * (parcelas - 1)).toFixed(2)
+          : valParcBase;
+        const parcelaDate = addMesesSemRollover(date, i);
         const newTx: Transacao = {
-          id: nextId() + i,
-          desc, val: +(val / parcelas).toFixed(2),
-          date: dt.toISOString().slice(0, 10),
+          id: nextId(),
+          desc, val: valParc,
+          date: parcelaDate,
           type, cat, pay,
-          parc: `${i + 1}/${parcelas}`, pg: gid,
+          parc: `${i + 1}/${parcelas}`, pg: gidBase,
         };
         newTxs.push(newTx);
+        // aplicarCategoriaCaixinhas já filtra por data futura
         newCaixinhas = aplicarCategoriaCaixinhas(newTx, newCaixinhas);
       }
     } else {
@@ -251,6 +265,7 @@ function FinancasInner() {
 
     // Se pendência estava vinculada a uma caixinha, criar movimento compatível (pelo valor pago agora)
     let newCaixinhas = data.caixinhas;
+    const skipCaixinhas: number[] = [];
     if (p.caixinha_id) {
       const tipo: MovimentoCaixinha["tipo"] = p.kind === "receber" ? "deposito" : "saque";
       const mov: MovimentoCaixinha = {
@@ -263,10 +278,11 @@ function FinancasInner() {
       newCaixinhas = newCaixinhas.map((c) => c.id === p.caixinha_id
         ? { ...c, movimentos: [...c.movimentos, mov] }
         : c);
+      skipCaixinhas.push(p.caixinha_id);
     }
 
-    // Auto cat vinculada
-    newCaixinhas = aplicarCategoriaCaixinhas(tx, newCaixinhas);
+    // Auto cat vinculada — pula a caixinha que já foi tocada manualmente
+    newCaixinhas = aplicarCategoriaCaixinhas(tx, newCaixinhas, skipCaixinhas);
 
     commit({ txs: [...data.txs, tx], pendencias: newPendencias, caixinhas: newCaixinhas });
   }
@@ -298,6 +314,7 @@ function FinancasInner() {
 
     // Se for "emprestei" com caixinha destino, depositar na caixinha ao receber
     let newCaixinhas = data.caixinhas;
+    const skipCaixinhas: number[] = [];
     if (e.direcao === "emprestei" && e.caixinha_id) {
       const mov: MovimentoCaixinha = {
         id: nextId(),
@@ -309,12 +326,50 @@ function FinancasInner() {
       newCaixinhas = newCaixinhas.map((c) => c.id === e.caixinha_id
         ? { ...c, movimentos: [...c.movimentos, mov] }
         : c);
+      skipCaixinhas.push(e.caixinha_id);
     }
 
-    // Auto cat vinculada
-    newCaixinhas = aplicarCategoriaCaixinhas(tx, newCaixinhas);
+    // Auto cat vinculada — pula caixinha já tocada manualmente
+    newCaixinhas = aplicarCategoriaCaixinhas(tx, newCaixinhas, skipCaixinhas);
 
     commit({ txs: [...data.txs, tx], emprestimos: newEmprestimos, caixinhas: newCaixinhas });
+  }
+
+  // Remover pagamento de empréstimo: reverte tx + movimentos de caixinha
+  function removerPagamentoEmprestimo(emprestimoId: number, pagId: number) {
+    const e = data.emprestimos.find((x) => x.id === emprestimoId);
+    if (!e) return;
+    const pag = e.pagamentos.find((p) => p.id === pagId);
+    if (!pag) return;
+    // Remove tx associada
+    const newTxs = pag.tx_id ? data.txs.filter((t) => t.id !== pag.tx_id) : data.txs;
+    // Reverte auto cat vinculada
+    let newCaixinhas = pag.tx_id
+      ? reverterCategoriaCaixinhas(pag.tx_id, data.caixinhas)
+      : data.caixinhas;
+    // Reverte depósito manual na caixinha do empréstimo (se havia)
+    if (e.caixinha_id && e.direcao === "emprestei") {
+      const tagDep = `Recebimento de empréstimo: ${e.pessoa}`;
+      newCaixinhas = newCaixinhas.map((c) => c.id === e.caixinha_id
+        ? {
+            ...c,
+            movimentos: c.movimentos.filter((m) =>
+              !(m.notas === tagDep && m.data === pag.data && m.valor === pag.valor)
+            ),
+          }
+        : c);
+    }
+    const newEmprestimos = data.emprestimos.map((x) => {
+      if (x.id !== emprestimoId) return x;
+      const novosPag = x.pagamentos.filter((p) => p.id !== pagId);
+      const pago = novosPag.reduce((a, p) => a + p.valor, 0);
+      return {
+        ...x,
+        pagamentos: novosPag,
+        status: pago >= x.valor_original ? "quitado" as const : "aberto" as const,
+      };
+    });
+    commit({ txs: newTxs, emprestimos: newEmprestimos, caixinhas: newCaixinhas });
   }
 
   // ─── Orçamentos ───
@@ -331,7 +386,27 @@ function FinancasInner() {
   // ─── Metas & Caixinhas ───
 
   function saveCaixinhasList(caixinhas: Caixinha[]) {
-    commit({ caixinhas });
+    // Detecta caixinhas deletadas e desvincula pendências/emprestimos que
+    // apontavam pra elas, para evitar referências órfãs.
+    const idsDepois = new Set(caixinhas.map((c) => c.id));
+    const deletadas = data.caixinhas
+      .map((c) => c.id)
+      .filter((id) => !idsDepois.has(id));
+    let newPendencias = data.pendencias;
+    let newEmprestimos = data.emprestimos;
+    if (deletadas.length > 0) {
+      newPendencias = data.pendencias.map((p) =>
+        p.caixinha_id && deletadas.includes(p.caixinha_id)
+          ? { ...p, caixinha_id: undefined }
+          : p
+      );
+      newEmprestimos = data.emprestimos.map((e) =>
+        e.caixinha_id && deletadas.includes(e.caixinha_id)
+          ? { ...e, caixinha_id: undefined }
+          : e
+      );
+    }
+    commit({ caixinhas, pendencias: newPendencias, emprestimos: newEmprestimos });
   }
   function saveMetasObj(metas: MetasFinanceiras) {
     commit({ metas });
@@ -376,6 +451,7 @@ function FinancasInner() {
       : x);
 
     let newCaixinhas = data.caixinhas;
+    const skipCaixinhas: number[] = [];
     if (caixinhaId && f.type === "fixo") {
       const mov: MovimentoCaixinha = {
         id: nextId(),
@@ -387,10 +463,11 @@ function FinancasInner() {
       newCaixinhas = newCaixinhas.map((c) => c.id === caixinhaId
         ? { ...c, movimentos: [...c.movimentos, mov] }
         : c);
+      skipCaixinhas.push(caixinhaId);
     }
 
-    // Auto cat vinculada (exceto a caixinha que já recebeu o saque manual)
-    newCaixinhas = aplicarCategoriaCaixinhas(tx, newCaixinhas);
+    // Auto cat vinculada — pula a caixinha que já foi tocada manualmente
+    newCaixinhas = aplicarCategoriaCaixinhas(tx, newCaixinhas, skipCaixinhas);
 
     commit({ txs: [...data.txs, tx], fixos: newFixos, caixinhas: newCaixinhas });
     setRealizarModal(null);
@@ -400,13 +477,21 @@ function FinancasInner() {
   function desrealizarFixo(fixoId: number, mesKey: string) {
     const f = data.fixos.find((x) => x.id === fixoId);
     if (!f || !f.realizacoes?.[mesKey]) return;
-    if (!confirm("Desfazer o pagamento deste fixo neste mês? A transação associada será removida.")) return;
+    if (!confirm("Desfazer o pagamento deste fixo neste mês? A transação associada e movimentos automáticos serão removidos.")) return;
     const txId = f.realizacoes[mesKey];
     const novasRealiz = { ...f.realizacoes };
     delete novasRealiz[mesKey];
+    // Reverte auto cat vinculada e movimentos "Pagamento de fixo: X" criados
+    // durante realizarFixo (saque manual em caixinha escolhida)
+    const tagFixoManual = `Pagamento de fixo: ${f.desc}`;
+    const caixinhasRevertidas = reverterCategoriaCaixinhas(txId, data.caixinhas).map((c) => ({
+      ...c,
+      movimentos: c.movimentos.filter((m) => m.notas !== tagFixoManual),
+    }));
     commit({
       txs: data.txs.filter((t) => t.id !== txId),
       fixos: data.fixos.map((x) => x.id === fixoId ? { ...x, realizacoes: novasRealiz } : x),
+      caixinhas: caixinhasRevertidas,
     });
   }
 
@@ -435,7 +520,20 @@ function FinancasInner() {
   }
 
   function saveCartoesList(cartoes: Cartao[]) {
-    commit({ cartoes });
+    // Detecta rename: se um cartão existente mudou de nome, propaga nas txs
+    // e fixos para que fatura/saldo positivo continuem ligados corretamente.
+    let txsUpdated = data.txs;
+    let fixosUpdated = data.fixos;
+    for (const c of cartoes) {
+      const old = data.cartoes.find((x) => x.id === c.id);
+      if (old && old.nome !== c.nome) {
+        const oldPay = "c:" + old.nome;
+        const newPay = "c:" + c.nome;
+        txsUpdated = txsUpdated.map((t) => t.pay === oldPay ? { ...t, pay: newPay } : t);
+        fixosUpdated = fixosUpdated.map((f) => f.pay === oldPay ? { ...f, pay: newPay } : f);
+      }
+    }
+    commit({ cartoes, txs: txsUpdated, fixos: fixosUpdated });
   }
 
   function addGastoCartao(cartao: Cartao, form: {
@@ -448,15 +546,17 @@ function FinancasInner() {
     // Gera transações (com ou sem parcelas)
     const novasTx: Transacao[] = [];
     if (parcelar && parcelas > 1) {
-      const [y, m, d] = date.split("-").map(Number);
-      const gid = Date.now();
-      const valParc = +(val / parcelas).toFixed(2);
+      const gid = nextId();
+      const valParcBase = +(val / parcelas).toFixed(2);
       for (let i = 0; i < parcelas; i++) {
-        const dt = new Date(y, m - 1 + i, d);
+        // Última parcela absorve o resto para garantir soma == val
+        const valParc = i === parcelas - 1
+          ? +(val - valParcBase * (parcelas - 1)).toFixed(2)
+          : valParcBase;
         novasTx.push({
-          id: nextId() + i,
+          id: nextId(),
           desc, val: valParc,
-          date: dt.toISOString().slice(0, 10),
+          date: addMesesSemRollover(date, i),
           type: "variavel",
           cat, pay,
           parc: `${i + 1}/${parcelas}`,
@@ -514,9 +614,26 @@ function FinancasInner() {
     commit({ cats: [...data.cats, { n: n.trim(), c }] });
   }
   function removeCat(i: number) {
-    if (!confirm(`Remover "${data.cats[i].n}"?`)) return;
+    const cat = data.cats[i];
+    if (!cat) return;
+    const usosTxs = data.txs.filter((t) => t.cat === cat.n).length;
+    const usosFixos = data.fixos.filter((f) => f.cat === cat.n).length;
+    const usosPend = data.pendencias.filter((p) => p.cat === cat.n).length;
+    const usosOrc = data.orcamentos.filter((o) => o.cat === cat.n).length;
+    const caixinhasVinc = data.caixinhas.filter((c) => c.cat_vinculada === cat.n);
+    const totalUsos = usosTxs + usosFixos + usosPend + usosOrc + caixinhasVinc.length;
+    const msg = totalUsos > 0
+      ? `"${cat.n}" está em uso (${usosTxs} lançamentos, ${usosFixos} fixos, ${usosPend} pendências, ${usosOrc} orçamentos, ${caixinhasVinc.length} caixinhas vinculadas). Remover mesmo assim?`
+      : `Remover "${cat.n}"?`;
+    if (!confirm(msg)) return;
     const nc = [...data.cats]; nc.splice(i, 1);
-    commit({ cats: nc });
+    // Remove orçamento dessa categoria também
+    const novosOrc = data.orcamentos.filter((o) => o.cat !== cat.n);
+    // Remove vínculo da caixinha
+    const novasCaixinhas = data.caixinhas.map((c) =>
+      c.cat_vinculada === cat.n ? { ...c, cat_vinculada: undefined } : c
+    );
+    commit({ cats: nc, orcamentos: novosOrc, caixinhas: novasCaixinhas });
   }
 
   const cartoesConhecidos = useMemo(() => {
@@ -850,6 +967,7 @@ function FinancasInner() {
           onSaveEmprestimos={saveEmprestimosList}
           onQuitar={quitarPendencia}
           onRegistrarPagamentoEmprestimo={registrarPagamentoEmprestimo}
+          onRemoverPagamentoEmprestimo={removerPagamentoEmprestimo}
         />
       )}
 

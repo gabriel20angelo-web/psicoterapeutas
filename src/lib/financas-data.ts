@@ -500,15 +500,33 @@ export function dividaTotalCartoesMes(
 /**
  * Aplica efeito de categoria vinculada: se uma tx cai numa categoria que tem
  * caixinha vinculada, move dinheiro automaticamente (entrada → depósito; gasto → saque).
- * Retorna o array atualizado de caixinhas (idempotente em relação às não vinculadas).
+ *
+ * Regras para evitar inconsistências:
+ * - Só aplica em txs com data <= hoje (já realizadas). Parcelas futuras e
+ *   gastos agendados no futuro NÃO disparam movimento (mantém consistência
+ *   com saldoReal, que também ignora txs futuras).
+ * - `skipCaixinhaIds` pula caixinhas específicas (quando o caller já aplicou
+ *   manualmente um movimento — ex: pendência com caixinha_id ou fixo com
+ *   caixinha de origem). Evita dupla contagem.
+ *
+ * O movimento gerado tem notas `Auto(tx:${tx.id})` para permitir reversão
+ * exata em deletes e edições.
+ *
+ * Retorna o array atualizado de caixinhas.
  */
 export function aplicarCategoriaCaixinhas(
   tx: Transacao,
-  caixinhas: Caixinha[]
+  caixinhas: Caixinha[],
+  skipCaixinhaIds?: number[]
 ): Caixinha[] {
+  // Só aplica em txs realizadas
+  if (tx.date > hojeISO()) return caixinhas;
+
   const entrada = isEntrada(tx.type);
+  const skip = new Set(skipCaixinhaIds || []);
   return caixinhas.map((c) => {
     if (c.arquivada) return c;
+    if (skip.has(c.id)) return c;
     if (!c.cat_vinculada || c.cat_vinculada !== tx.cat) return c;
     const disponivel = saldoCaixinha(c);
     const valor = entrada ? tx.val : Math.min(tx.val, disponivel);
@@ -518,9 +536,25 @@ export function aplicarCategoriaCaixinhas(
       tipo: entrada ? "deposito" : "saque",
       valor,
       data: tx.date,
-      notas: `Auto (${tx.desc})`,
+      notas: `Auto(tx:${tx.id})`,
     };
     return { ...c, movimentos: [...c.movimentos, mov] };
+  });
+}
+
+/**
+ * Remove movimentos auto-gerados por uma tx que foi deletada/editada.
+ * Busca por notas === `Auto(tx:${txId})` em TODAS as caixinhas não arquivadas.
+ */
+export function reverterCategoriaCaixinhas(
+  txId: number,
+  caixinhas: Caixinha[]
+): Caixinha[] {
+  const tag = `Auto(tx:${txId})`;
+  return caixinhas.map((c) => {
+    const filtered = c.movimentos.filter((m) => m.notas !== tag);
+    if (filtered.length === c.movimentos.length) return c;
+    return { ...c, movimentos: filtered };
   });
 }
 
@@ -569,9 +603,11 @@ export function resumoMensal(
     if (isEntrada(t.type)) e_real += t.val;
     else g_real += t.val;
   }
-  // Fixos ativos do mês
+  // Fixos ativos do mês que AINDA não foram realizados (para evitar dupla
+  // contagem com a tx real criada em realizarFixo).
   for (const f of data.fixos) {
     if (f.active === false) continue;
+    if (fixoRealizadoEm(f, y, m)) continue;
     if (f.type === "entrada_fixa") e_real += f.val;
     else g_real += f.val;
   }
@@ -661,9 +697,10 @@ export function gastosPorCategoriaMes(
     return d.getFullYear() === y && d.getMonth() === m && !isEntrada(t.type);
   });
   for (const t of reais) out[t.cat || "Outros"] = (out[t.cat || "Outros"] || 0) + t.val;
-  // Include fixos (virtuais)
+  // Inclui fixos virtuais (não realizados) — realizados já foram contados como tx
   for (const f of data.fixos) {
     if (f.active === false || f.type !== "fixo") continue;
+    if (fixoRealizadoEm(f, y, m)) continue;
     out[f.cat || "Outros"] = (out[f.cat || "Outros"] || 0) + f.val;
   }
   return out;
@@ -673,6 +710,20 @@ export function gastosPorCategoriaMes(
 
 export function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Adiciona N meses a uma data-base sem rolover de dia. Se o dia não existe
+ * no mês alvo (ex: 31 em fevereiro), usa o último dia do mês alvo.
+ * Retorna string "YYYY-MM-DD".
+ */
+export function addMesesSemRollover(baseISO: string, meses: number): string {
+  const [y, m, d] = baseISO.split("-").map(Number);
+  const alvoY = meses === 0 ? y : new Date(y, m - 1 + meses, 1).getFullYear();
+  const alvoM = meses === 0 ? m - 1 : new Date(y, m - 1 + meses, 1).getMonth();
+  const ultimoDia = new Date(alvoY, alvoM + 1, 0).getDate();
+  const diaFinal = Math.min(d, ultimoDia);
+  return `${alvoY}-${String(alvoM + 1).padStart(2, "0")}-${String(diaFinal).padStart(2, "0")}`;
 }
 
 export function isVencida(p: Pendencia): boolean {
@@ -778,7 +829,9 @@ export function agruparDividas(pendencias: Pendencia[]): DividaGrupo[] {
   });
 }
 
-/** Cria transação realizada a partir de uma pendência (quitação). */
+/** Cria transação realizada a partir de uma pendência (quitação).
+ *  `pg` usa parent_id negativo para evitar colisão com grupos de parcelas
+ *  de compras no cartão (que usam pg positivo). */
 export function pendenciaToTx(p: Pendencia, payDate: string, valor?: number): Transacao {
   return {
     id: nextId(),
@@ -789,7 +842,7 @@ export function pendenciaToTx(p: Pendencia, payDate: string, valor?: number): Tr
     cat: p.cat,
     pay: p.pay,
     parc: p.parc_num && p.parc_total ? `${p.parc_num}/${p.parc_total}` : null,
-    pg: p.parent_id || null,
+    pg: p.parent_id ? -Math.abs(p.parent_id) : null,
   };
 }
 
@@ -869,6 +922,18 @@ export function lancamentosDoMes(d: FinancasData, y: number, m: number) {
   return [...reais, ...fixos].sort((a, b) => b.date.localeCompare(a.date));
 }
 
+// Counter monotônico em memória + base Date.now() garantem unicidade mesmo
+// em calls sucessivas no mesmo ms. Persistência entre reloads é dispensável
+// porque o Date.now() avança a cada ms.
+let _idCounter = 0;
+let _idLastBase = 0;
 export function nextId(): number {
-  return Date.now() + Math.floor(Math.random() * 1000);
+  const base = Date.now();
+  if (base === _idLastBase) {
+    _idCounter++;
+  } else {
+    _idLastBase = base;
+    _idCounter = 0;
+  }
+  return base * 1000 + _idCounter;
 }

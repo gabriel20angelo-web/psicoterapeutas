@@ -18,10 +18,11 @@ export interface EmprestimosViewProps {
   cartoes: string[];
   onSave: (e: Emprestimo[]) => void;
   onRegistrarPagamento: (emprestimoId: number, pag: PagamentoEmprestimo) => void;
+  onRemoverPagamento: (emprestimoId: number, pagId: number) => void;
 }
 
 export default function EmprestimosView({
-  emprestimos, cats, caixinhas, cartoes, onSave, onRegistrarPagamento,
+  emprestimos, cats, caixinhas, cartoes, onSave, onRegistrarPagamento, onRemoverPagamento,
 }: EmprestimosViewProps) {
   const [modal, setModal] = useState<null | { editing: Emprestimo | null; direcao: DirecaoEmprestimo }>(null);
   const [pagModal, setPagModal] = useState<Emprestimo | null>(null);
@@ -78,10 +79,8 @@ export default function EmprestimosView({
   }
 
   function removerPagamento(emprestimoId: number, pagId: number) {
-    if (!confirm("Remover este pagamento? O lançamento associado não será apagado.")) return;
-    onSave(emprestimos.map((e) => e.id === emprestimoId
-      ? { ...e, pagamentos: e.pagamentos.filter((p) => p.id !== pagId), status: "aberto" as const }
-      : e));
+    if (!confirm("Remover este pagamento? O lançamento associado e movimentos automáticos também serão removidos.")) return;
+    onRemoverPagamento(emprestimoId, pagId);
   }
 
   const abertos = emprestimos.filter((e) => emprestimoRestante(e) > 0);
@@ -462,7 +461,7 @@ function PagamentoModal({
   onConfirm: (valor: number, data: string, notas: string) => void;
 }) {
   const restante = emprestimoRestante(emprestimo);
-  const [valor, setValor] = useState(String(restante));
+  const [valor, setValor] = useState(restante.toFixed(2));
   const [data, setData] = useState(hojeISO());
   const [notas, setNotas] = useState("");
   const emp = emprestimo.direcao === "emprestei";
@@ -501,6 +500,9 @@ function PagamentoModal({
           <button onClick={() => {
             const v = parseFloat(valor);
             if (isNaN(v) || v <= 0) { alert("Valor inválido."); return; }
+            if (v > restante + 0.005) {
+              if (!confirm(`O valor ${fmtBRL(v)} excede o restante (${fmtBRL(restante)}). Continuar mesmo assim?`)) return;
+            }
             onConfirm(v, data, notas);
           }}
             className="flex-1 py-2.5 rounded-lg font-dm text-xs font-semibold text-white"

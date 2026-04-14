@@ -9,7 +9,7 @@ import {
   type Pendencia, type Categoria, type PendenciaKind,
   type Emprestimo, type PagamentoEmprestimo, type Caixinha,
   fmtBRL, labelPay, isVencida, diasAteVencer, hojeISO, agruparDividas, nextId,
-  valorPagoPendencia, valorRestantePendencia,
+  valorPagoPendencia, valorRestantePendencia, addMesesSemRollover,
   type DividaGrupo,
 } from "@/lib/financas-data";
 import EmprestimosView from "./EmprestimosView";
@@ -34,10 +34,12 @@ export interface PendenciasTabProps {
   onSaveEmprestimos: (e: Emprestimo[]) => void;
   onQuitar: (id: number, payDate: string, valorParcial?: number) => void;
   onRegistrarPagamentoEmprestimo: (emprestimoId: number, pag: PagamentoEmprestimo) => void;
+  onRemoverPagamentoEmprestimo: (emprestimoId: number, pagId: number) => void;
 }
 
 export default function PendenciasTab({
-  pendencias, emprestimos, cats, caixinhas, cartoes, onSave, onSaveEmprestimos, onQuitar, onRegistrarPagamentoEmprestimo,
+  pendencias, emprestimos, cats, caixinhas, cartoes, onSave, onSaveEmprestimos, onQuitar,
+  onRegistrarPagamentoEmprestimo, onRemoverPagamentoEmprestimo,
 }: PendenciasTabProps) {
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [modal, setModal] = useState<null | { editing: Pendencia | null; kind: PendenciaKind }>(null);
@@ -81,18 +83,19 @@ export default function PendenciasTab({
         ? { ...p, desc, val, date_due, cat, pay, credor, notas, caixinha_id }
         : p));
     } else if (parcelar && parcelas > 1) {
-      const parent_id = Date.now();
-      const [y, m, d] = date_due.split("-").map(Number);
-      const valParc = +(val / parcelas).toFixed(2);
+      const parent_id = nextId();
+      const valParcBase = +(val / parcelas).toFixed(2);
       const novas: Pendencia[] = [];
       for (let i = 0; i < parcelas; i++) {
-        const dt = new Date(y, m - 1 + i, d);
+        const valParc = i === parcelas - 1
+          ? +(val - valParcBase * (parcelas - 1)).toFixed(2)
+          : valParcBase;
         novas.push({
-          id: nextId() + i,
+          id: nextId(),
           kind,
           desc,
           val: valParc,
-          date_due: dt.toISOString().slice(0, 10),
+          date_due: addMesesSemRollover(date_due, i),
           cat, pay,
           status: "aberto",
           parc_num: i + 1,
@@ -189,6 +192,7 @@ export default function PendenciasTab({
           cartoes={cartoes}
           onSave={onSaveEmprestimos}
           onRegistrarPagamento={onRegistrarPagamentoEmprestimo}
+          onRemoverPagamento={onRemoverPagamentoEmprestimo}
         />
       ) : filtro === "dividas" ? (
         <DividasView
