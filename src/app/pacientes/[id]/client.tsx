@@ -12,7 +12,7 @@ import Input from "@/components/ui/Input";
 import Tabs from "@/components/ui/Tabs";
 import EmptyState from "@/components/ui/EmptyState";
 import CanvasEditor from "@/components/anotacoes/CanvasEditor";
-import { getPaciente, getAtividadesByPaciente, getAtividades, updatePaciente, getTemplates, updateAtividade, createAtividade, deleteAtividade } from "@/lib/data";
+import { getPaciente, getAtividadesByPaciente, getAtividades, updatePaciente, getTemplates, updateAtividade, createAtividade, deleteAtividade, deletePaciente } from "@/lib/data";
 import ActivityDetailModal from "@/components/agenda/ActivityDetailModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { fillTemplate, buildWhatsAppUrl, buildMessageVars } from "@/lib/whatsapp";
@@ -199,7 +199,18 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
     else if (action === 'delete') { deleteAtividade(session.id); toast('Sessão excluída', { type: 'warning' }); forceUpdate(n => n + 1); }
   };
   const [showInactiveConfirm, setShowInactiveConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const toggleInactive = () => { updatePaciente(paciente.id, { status: paciente.status === 'ativo' ? 'inativo' : 'ativo' }); setShowInactiveConfirm(false); toast(paciente.status === 'ativo' ? 'Paciente inativado' : 'Paciente reativado', { type: 'success' }); forceUpdate(n => n + 1); };
+  const handleDeletePaciente = () => {
+    if (deleteConfirmText.trim().toLowerCase() !== paciente.nome.trim().toLowerCase()) {
+      toast('Nome não confere — digite o nome do paciente exatamente', { type: 'error' });
+      return;
+    }
+    deletePaciente(paciente.id);
+    toast(`${paciente.nome} excluído permanentemente`, { type: 'success' });
+    router.push('/pacientes');
+  };
   const computeBatchDates = (): string[] => {
     const dates: string[] = [];
     const base = new Date(`${newSession.data}T${newSession.horaInicio}:00`);
@@ -472,6 +483,7 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={() => setShowExportModal(true)} icon={<Download size={14} />}>Exportar</Button>
             <Button variant="ghost" size="sm" onClick={() => paciente.status === 'ativo' ? setShowInactiveConfirm(true) : toggleInactive()} icon={paciente.status === 'ativo' ? <UserX size={14} /> : <User size={14} />}>{paciente.status === 'ativo' ? 'Inativar' : 'Reativar'}</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setDeleteConfirmText(""); setShowDeleteConfirm(true); }} icon={<Trash2 size={14} />}>Excluir</Button>
           </div>
         </div>
       </motion.div>
@@ -777,6 +789,40 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
           </div>
         )}
       </motion.div>)}
+
+      {/* Delete confirmation */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
+          <div className="relative w-full max-w-[95vw] sm:max-w-[440px] mx-4 card-base modal-glass p-6">
+            <h3 className="font-fraunces font-bold text-lg text-[var(--text-primary)] mb-2">Excluir paciente permanentemente?</h3>
+            <p className="font-dm text-sm text-[var(--text-secondary)] mb-3">
+              Isso vai apagar <strong>{paciente.nome}</strong>, todas as <strong>sessões</strong> e todas as <strong>anotações</strong> deste paciente. <strong>Esta ação não pode ser desfeita.</strong>
+            </p>
+            <p className="font-dm text-xs text-[var(--text-tertiary)] mb-2">
+              Se tem certeza, digite o nome do paciente abaixo para confirmar:
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={paciente.nome}
+              autoFocus
+              className="input-hamilton w-full mb-4"
+            />
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>Cancelar</Button>
+              <button
+                onClick={handleDeletePaciente}
+                disabled={deleteConfirmText.trim().toLowerCase() !== paciente.nome.trim().toLowerCase()}
+                className="px-4 py-2 rounded-xl bg-red-500 text-white font-dm text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Excluir permanentemente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation dialog for inactivation (#2) */}
       {showInactiveConfirm && (

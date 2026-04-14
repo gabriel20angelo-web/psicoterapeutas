@@ -90,6 +90,27 @@ export async function initializeData(userId: string): Promise<void> {
       templates = tRes.data || [];
       notificacoes = nRes.data || [];
 
+      // Merge de edições locais não sincronizadas: se a versão local for mais
+      // recente (updated_at maior), prevalece e é re-enviada ao Supabase. Isso
+      // protege contra escritas remotas que falharam silenciosamente.
+      const localPacientes = loadLocal<Paciente>(LS.pacientes);
+      for (const local of localPacientes) {
+        const remoteIdx = pacientes.findIndex(p => p.id === local.id);
+        if (remoteIdx === -1) continue;
+        const remote = pacientes[remoteIdx];
+        const localTs = new Date(local.updated_at || 0).getTime();
+        const remoteTs = new Date(remote.updated_at || 0).getTime();
+        if (localTs > remoteTs) {
+          pacientes[remoteIdx] = local;
+          const { id: _id, ...updateData } = local;
+          supabase.from('pacientes').update(updateData).eq('id', local.id).then(({ error }) => {
+            if (error && process.env.NODE_ENV === 'development') {
+              console.warn('[Data] re-push paciente falhou:', error.message);
+            }
+          });
+        }
+      }
+
       const localAtividades = loadLocal<Atividade>(LS.atividades);
       if (localAtividades.length > 0) {
         const supabaseIds = new Set(atividades.map(a => a.id));
@@ -252,10 +273,22 @@ export function createPaciente(data: Omit<Paciente, 'id' | 'created_at' | 'updat
 export function updatePaciente(id: string, data: Partial<Paciente>): Paciente | undefined {
   const idx = pacientes.findIndex(p => p.id === id);
   if (idx === -1) return undefined;
-  pacientes[idx] = { ...pacientes[idx], ...data, updated_at: new Date().toISOString() };
+  // Remove chaves undefined — Supabase ignora undefineds mas spread em JS mantém como undefined
+  const clean: Partial<Paciente> = {};
+  for (const k of Object.keys(data) as (keyof Paciente)[]) {
+    if (data[k] !== undefined) (clean as any)[k] = data[k];
+  }
+  const updated_at = new Date().toISOString();
+  pacientes[idx] = { ...pacientes[idx], ...clean, updated_at };
   saveLocal(LS.pacientes, pacientes);
   notifyChange();
-  if (_useSupabase) supabase.from('pacientes').update(data).eq('id', id);
+  if (_useSupabase) {
+    supabase.from('pacientes').update({ ...clean, updated_at }).eq('id', id).then(({ error }) => {
+      if (error && process.env.NODE_ENV === 'development') {
+        console.error('[Data] updatePaciente Supabase failed:', error.message);
+      }
+    });
+  }
   return pacientes[idx];
 }
 

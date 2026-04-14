@@ -39,7 +39,7 @@ export default function FrequenciaPage() {
   const [showForm, setShowForm] = useState(false);
   const [formDiscId, setFormDiscId] = useState("");
   const [formData, setFormData] = useState(new Date().toISOString().slice(0, 10));
-  const [formPresenca, setFormPresenca] = useState<TipoPresenca>("presente");
+  const [formJustificada, setFormJustificada] = useState(false);
   const [editingLimite, setEditingLimite] = useState<string | null>(null);
   const [limiteValue, setLimiteValue] = useState("");
 
@@ -51,8 +51,9 @@ export default function FrequenciaPage() {
 
   const handleSaveFrequencia = () => {
     if (!formDiscId) return;
-    createFrequencia({ disciplina_id: formDiscId, data: formData, presenca: formPresenca });
-    toast("Presença registrada", { type: "success" });
+    const presenca: TipoPresenca = formJustificada ? "justificada" : "ausente";
+    createFrequencia({ disciplina_id: formDiscId, data: formData, presenca });
+    toast(formJustificada ? "Falta justificada registrada" : "Falta registrada", { type: "success" });
     setShowForm(false);
     refresh();
   };
@@ -60,7 +61,7 @@ export default function FrequenciaPage() {
   const openFormForDisc = (discId: string) => {
     setFormDiscId(discId);
     setFormData(new Date().toISOString().slice(0, 10));
-    setFormPresenca("presente");
+    setFormJustificada(false);
     setShowForm(true);
   };
 
@@ -89,11 +90,11 @@ export default function FrequenciaPage() {
             </Link>
             <div>
               <h1 className="font-fraunces text-xl font-bold text-[var(--text-primary)]">Controle de Frequência</h1>
-              <p className="font-dm text-sm text-[var(--text-tertiary)]">Presenças e faltas por disciplina</p>
+              <p className="font-dm text-sm text-[var(--text-tertiary)]">Registro de faltas por disciplina</p>
             </div>
           </div>
-          <Button variant="primary" size="sm" onClick={() => { setFormDiscId(disciplinas[0]?.id || ""); setShowForm(true); }}>
-            <Plus size={14} /> Registrar
+          <Button variant="primary" size="sm" onClick={() => { setFormDiscId(disciplinas[0]?.id || ""); setFormJustificada(false); setFormData(new Date().toISOString().slice(0, 10)); setShowForm(true); }}>
+            <Plus size={14} /> Registrar falta
           </Button>
         </div>
 
@@ -151,7 +152,7 @@ export default function FrequenciaPage() {
                     <div className="mt-2 flex justify-end">
                       <button onClick={(e) => { e.stopPropagation(); openFormForDisc(d.id); }}
                         className="font-dm text-[10px] text-[var(--orange-500)] hover:underline">
-                        + Registrar
+                        + Registrar falta
                       </button>
                     </div>
                   </div>
@@ -166,14 +167,10 @@ export default function FrequenciaPage() {
           <Modal isOpen={!!detailDiscId} onClose={() => setDetailDiscId(null)} title={detailDisc.nome} size="md">
             <div className="space-y-4">
               {/* Summary */}
-              <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="grid grid-cols-3 gap-2 text-center">
                 <div className="p-2 rounded-lg bg-[var(--bg-hover)]">
                   <p className="font-mono text-lg font-bold text-[var(--text-primary)]">{detailResumo.percentual}%</p>
                   <p className="font-dm text-[10px] text-[var(--text-tertiary)]">Frequência</p>
-                </div>
-                <div className="p-2 rounded-lg" style={{ backgroundColor: PRESENCA_COLORS.presente.bg }}>
-                  <p className="font-mono text-lg font-bold" style={{ color: PRESENCA_COLORS.presente.text }}>{detailResumo.presentes}</p>
-                  <p className="font-dm text-[10px] text-[var(--text-tertiary)]">Presenças</p>
                 </div>
                 <div className="p-2 rounded-lg" style={{ backgroundColor: PRESENCA_COLORS.ausente.bg }}>
                   <p className="font-mono text-lg font-bold" style={{ color: PRESENCA_COLORS.ausente.text }}>{detailResumo.ausentes}</p>
@@ -276,18 +273,27 @@ export default function FrequenciaPage() {
         )}
 
         {/* Frequencia Form */}
-        <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Registrar Presença" size="sm">
+        <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Registrar Falta" size="sm">
           <div className="space-y-3">
             <Select label="Disciplina" value={formDiscId} onChange={setFormDiscId} options={disciplinas.map(d => ({ value: d.id, label: d.nome }))} />
-            <Input label="Data" type="date" value={formData} onChange={setFormData} />
-            <Select label="Presença" value={formPresenca} onChange={val => setFormPresenca(val as TipoPresenca)} options={[
-              { value: "presente", label: "Presente" },
-              { value: "ausente", label: "Ausente" },
-              { value: "justificada", label: "Justificada" },
-            ]} />
+            <Input label="Data da falta" type="date" value={formData} onChange={setFormData} />
+            <label className="flex items-center gap-2 cursor-pointer px-3 py-2.5 rounded-lg"
+              style={{ background: "var(--bg-hover)", border: "1px solid var(--border-default)" }}>
+              <input
+                type="checkbox"
+                checked={formJustificada}
+                onChange={(e) => setFormJustificada(e.target.checked)}
+              />
+              <span className="font-dm text-sm" style={{ color: "var(--text-primary)" }}>
+                Falta justificada
+              </span>
+              <span className="font-dm text-[10px] ml-auto" style={{ color: "var(--text-tertiary)" }}>
+                (atestado, feriado etc.)
+              </span>
+            </label>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setShowForm(false)}>Cancelar</Button>
-              <Button variant="primary" onClick={handleSaveFrequencia}>Registrar</Button>
+              <Button variant="primary" onClick={handleSaveFrequencia}>Registrar falta</Button>
             </div>
           </div>
         </Modal>
