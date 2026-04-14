@@ -4,10 +4,13 @@ import { useState, useMemo } from "react";
 import {
   Plus, Pencil, Trash2, CreditCard, ChevronDown, ChevronUp, X,
   ArrowDownCircle, ArrowUpCircle, Calendar, AlertTriangle, Check,
+  ShoppingBag, TrendingUp, Repeat,
 } from "lucide-react";
 import {
   type Cartao, type AjusteCartao, type AjusteCartaoTipo, type Transacao, type FixoItem,
+  type Categoria, type DividaCartao,
   fmtBRL, hojeISO, nextId, saldoPositivoCartao, faturaCartaoMes,
+  parcelasFuturasCartao, dividasAbertasCartao, faturaProjetadaMes, MESES,
 } from "@/lib/financas-data";
 
 const CORES_CARTAO = [
@@ -15,21 +18,34 @@ const CORES_CARTAO = [
   "#ea580c", "#d97706", "#65a30d", "#0284c7", "#c026d3",
 ];
 
+export interface CartaoGastoForm {
+  desc: string;
+  val: number;
+  date: string;
+  cat: string;
+  parcelar: boolean;
+  parcelas: number;
+  usar_saldo_positivo: boolean;
+}
+
 export interface CartoesTabProps {
   cartoes: Cartao[];
   txs: Transacao[];
   fixos: FixoItem[];
+  cats: Categoria[];
   mY: number;
   mM: number;
   mesLabel: string;
   onSave: (c: Cartao[]) => void;
+  onAddGasto: (cartao: Cartao, form: CartaoGastoForm) => void;
 }
 
 export default function CartoesTab({
-  cartoes, txs, fixos, mY, mM, mesLabel, onSave,
+  cartoes, txs, fixos, cats, mY, mM, mesLabel, onSave, onAddGasto,
 }: CartoesTabProps) {
   const [modal, setModal] = useState<null | { editing: Cartao | null }>(null);
   const [ajusteModal, setAjusteModal] = useState<null | { cartao: Cartao; tipo: AjusteCartaoTipo }>(null);
+  const [gastoModal, setGastoModal] = useState<Cartao | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   function toggleExpand(id: number) {
@@ -142,6 +158,7 @@ export default function CartoesTab({
               mM={mM}
               expanded={expanded.has(c.id)}
               onToggle={() => toggleExpand(c.id)}
+              onNovoGasto={() => setGastoModal(c)}
               onCredito={() => setAjusteModal({ cartao: c, tipo: "credito" })}
               onDebito={() => setAjusteModal({ cartao: c, tipo: "debito" })}
               onEdit={() => setModal({ editing: c })}
@@ -170,6 +187,7 @@ export default function CartoesTab({
                 mM={mM}
                 expanded={expanded.has(c.id)}
                 onToggle={() => toggleExpand(c.id)}
+                onNovoGasto={() => setGastoModal(c)}
                 onCredito={() => setAjusteModal({ cartao: c, tipo: "credito" })}
                 onDebito={() => setAjusteModal({ cartao: c, tipo: "debito" })}
                 onEdit={() => setModal({ editing: c })}
@@ -198,6 +216,18 @@ export default function CartoesTab({
           onConfirm={handleAjuste}
         />
       )}
+
+      {gastoModal && (
+        <GastoCartaoModal
+          cartao={gastoModal}
+          cats={cats}
+          onClose={() => setGastoModal(null)}
+          onSubmit={(form) => {
+            onAddGasto(gastoModal, form);
+            setGastoModal(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -206,7 +236,7 @@ export default function CartoesTab({
 
 function CartaoCardView({
   c, txs, fixos, mY, mM, expanded,
-  onToggle, onCredito, onDebito, onEdit, onToggleAtivo, onDelete, onDeleteAjuste,
+  onToggle, onNovoGasto, onCredito, onDebito, onEdit, onToggleAtivo, onDelete, onDeleteAjuste,
 }: {
   c: Cartao;
   txs: Transacao[];
@@ -215,6 +245,7 @@ function CartaoCardView({
   mM: number;
   expanded: boolean;
   onToggle: () => void;
+  onNovoGasto: () => void;
   onCredito: () => void;
   onDebito: () => void;
   onEdit: () => void;
@@ -228,6 +259,22 @@ function CartaoCardView({
   const pctLimite = c.limite ? Math.min(100, (fatura.total / c.limite) * 100) : 0;
   const proximoLimite = c.limite ? pctLimite > 80 : false;
   const estouro = c.limite ? fatura.total > c.limite : false;
+
+  // Próxima fatura e dívidas parceladas em aberto
+  const nextY = mM === 11 ? mY + 1 : mY;
+  const nextM = mM === 11 ? 0 : mM + 1;
+  const proximaFatura = useMemo(
+    () => faturaProjetadaMes(c.nome, txs, fixos, nextY, nextM),
+    [c.nome, txs, fixos, nextY, nextM]
+  );
+  const parcelasFut = useMemo(
+    () => parcelasFuturasCartao(c.nome, txs, mY, mM),
+    [c.nome, txs, mY, mM]
+  );
+  const dividas = useMemo(
+    () => dividasAbertasCartao(c.nome, txs, mY, mM),
+    [c.nome, txs, mY, mM]
+  );
 
   return (
     <div className="rounded-xl overflow-hidden transition-all"
@@ -334,6 +381,44 @@ function CartaoCardView({
           </p>
         )}
 
+        {/* PRÓXIMA FATURA + DÍVIDAS ABERTAS */}
+        {(proximaFatura > 0 || parcelasFut.total > 0) && (
+          <div className="mb-3 p-3 rounded-lg grid grid-cols-2 gap-3"
+            style={{ background: "var(--bg-hover)", border: "1px solid var(--border-subtle)" }}>
+            <div>
+              <p className="font-dm text-[9px] uppercase tracking-wider font-semibold"
+                style={{ color: "var(--text-tertiary)" }}>
+                Próxima fatura
+              </p>
+              <p className="font-mono text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                R$ {fmtBRL(proximaFatura)}
+              </p>
+              <p className="font-dm text-[9px]" style={{ color: "var(--text-tertiary)" }}>
+                {MESES[nextM]}
+              </p>
+            </div>
+            <div>
+              <p className="font-dm text-[9px] uppercase tracking-wider font-semibold"
+                style={{ color: "var(--text-tertiary)" }}>
+                Parcelas em aberto
+              </p>
+              <p className="font-mono text-sm font-semibold" style={{ color: "#fb923c" }}>
+                R$ {fmtBRL(parcelasFut.total)}
+              </p>
+              <p className="font-dm text-[9px]" style={{ color: "var(--text-tertiary)" }}>
+                {dividas.length} {dividas.length === 1 ? "compra parcelada" : "compras parceladas"}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* CTA principal: lançar gasto direto no cartão */}
+        <button onClick={onNovoGasto}
+          className="w-full px-3 py-2.5 rounded-md font-dm text-xs font-semibold text-white inline-flex items-center justify-center gap-2 mb-2 transition-all hover:brightness-110"
+          style={{ background: c.cor }}>
+          <ShoppingBag size={13} /> Novo gasto no cartão
+        </button>
+
         {/* Action buttons */}
         <div className="flex gap-2 flex-wrap">
           <button onClick={onCredito}
@@ -400,6 +485,76 @@ function CartaoCardView({
               </div>
             )}
           </div>
+
+          {/* Dívidas parceladas em aberto */}
+          {dividas.length > 0 && (
+            <div className="p-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+              <p className="font-dm text-[10px] font-bold uppercase tracking-wider mb-2 inline-flex items-center gap-1"
+                style={{ color: "var(--text-tertiary)" }}>
+                <Repeat size={10} /> Parcelamentos em aberto ({dividas.length})
+              </p>
+              <div className="space-y-2">
+                {dividas.map((d) => {
+                  const pct = (d.pago / d.total) * 100;
+                  return (
+                    <div key={d.pg} className="p-2.5 rounded-lg"
+                      style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
+                      <div className="flex justify-between items-baseline mb-1.5">
+                        <span className="font-dm text-[11px] font-semibold truncate"
+                          style={{ color: "var(--text-primary)" }}>
+                          {d.desc}
+                        </span>
+                        <span className="font-mono text-[11px] font-semibold" style={{ color: "#fb923c" }}>
+                          R$ {fmtBRL(d.restante)}
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
+                        <div className="h-full" style={{ width: `${pct}%`, background: c.cor, opacity: 0.85 }} />
+                      </div>
+                      <div className="flex justify-between mt-1">
+                        <span className="font-dm text-[9px]" style={{ color: "var(--text-tertiary)" }}>
+                          {d.parcelas_pagas}/{d.parcelas_total} parcelas
+                        </span>
+                        <span className="font-dm text-[9px]" style={{ color: "var(--text-tertiary)" }}>
+                          {d.proxima_data ? `próx: ${d.proxima_data.slice(8, 10)}/${d.proxima_data.slice(5, 7)}` : ""}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Timeline: 6 próximas faturas */}
+          {parcelasFut.por_mes.length > 0 && (
+            <div className="p-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+              <p className="font-dm text-[10px] font-bold uppercase tracking-wider mb-2 inline-flex items-center gap-1"
+                style={{ color: "var(--text-tertiary)" }}>
+                <TrendingUp size={10} /> Próximas faturas previstas
+              </p>
+              <div className="space-y-1.5">
+                {parcelasFut.por_mes.slice(0, 6).map((m) => {
+                  const maxVal = Math.max(...parcelasFut.por_mes.map((x) => x.val));
+                  const w = maxVal > 0 ? (m.val / maxVal) * 100 : 0;
+                  return (
+                    <div key={`${m.y}-${m.m}`} className="flex items-center gap-2">
+                      <span className="font-dm text-[10px] w-16" style={{ color: "var(--text-tertiary)" }}>
+                        {MESES[m.m].slice(0, 3)} {String(m.y).slice(2)}
+                      </span>
+                      <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
+                        <div className="h-full" style={{ width: `${w}%`, background: c.cor, opacity: 0.6 }} />
+                      </div>
+                      <span className="font-mono text-[10px] font-semibold min-w-[72px] text-right"
+                        style={{ color: "var(--text-secondary)" }}>
+                        R$ {fmtBRL(m.val)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Histórico de ajustes */}
           {c.ajustes.length > 0 && (
@@ -611,6 +766,197 @@ function AjusteModal({
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Modal: novo gasto no cartão ──────────────────
+
+function GastoCartaoModal({
+  cartao, cats, onClose, onSubmit,
+}: {
+  cartao: Cartao;
+  cats: Categoria[];
+  onClose: () => void;
+  onSubmit: (form: CartaoGastoForm) => void;
+}) {
+  const [desc, setDesc] = useState("");
+  const [val, setVal] = useState("");
+  const [date, setDate] = useState(hojeISO());
+  const [cat, setCat] = useState(cats[0]?.n || "Outros");
+  const [parcelar, setParcelar] = useState(false);
+  const [parcelas, setParcelas] = useState(2);
+  const saldoPos = saldoPositivoCartao(cartao);
+  const [usarSaldo, setUsarSaldo] = useState(saldoPos > 0);
+
+  const valorNum = parseFloat(val);
+  const valorValido = !isNaN(valorNum) && valorNum > 0;
+  const saldoAplicado = usarSaldo && valorValido ? Math.min(saldoPos, valorNum) : 0;
+  const faturaAdicional = valorValido ? Math.max(0, valorNum - saldoAplicado) : 0;
+
+  // Quick date shortcuts
+  function setMes(delta: number) {
+    const d = new Date();
+    d.setMonth(d.getMonth() + delta);
+    d.setDate(Math.min(d.getDate(), new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+    setDate(d.toISOString().slice(0, 10));
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-7"
+        style={{ background: "var(--bg-card-elevated)", border: "1px solid var(--border-default)" }}>
+        <div className="flex justify-between items-start mb-5">
+          <h2 className="font-fraunces text-xl flex items-center gap-3" style={{ color: "var(--text-primary)" }}>
+            <span className="w-8 h-8 rounded-lg flex items-center justify-center"
+              style={{ background: cartao.cor, color: "#fff" }}>
+              <ShoppingBag size={14} />
+            </span>
+            <div>
+              Novo gasto
+              <div className="font-dm text-[10px] font-normal" style={{ color: "var(--text-tertiary)" }}>
+                no cartão {cartao.nome}
+              </div>
+            </div>
+          </h2>
+          <button onClick={onClose} style={{ color: "var(--text-tertiary)" }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <Field label="Descrição">
+          <Input value={desc} onChange={setDesc} placeholder="Ex: Mercado, Uber, Netflix..." autoFocus />
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Valor (R$)">
+            <Input type="number" value={val} onChange={setVal} placeholder="0,00" />
+          </Field>
+          <Field label="Data da compra">
+            <Input type="date" value={date} onChange={setDate} />
+          </Field>
+        </div>
+
+        {/* Date shortcuts */}
+        <div className="flex gap-1.5 flex-wrap mb-3 -mt-1">
+          <DateChip onClick={() => setDate(hojeISO())} label="Hoje" />
+          <DateChip onClick={() => setMes(0)} label="Este mês" />
+          <DateChip onClick={() => setMes(1)} label="Próximo mês" />
+          <DateChip onClick={() => setMes(2)} label="Em 2 meses" />
+        </div>
+
+        <Field label="Categoria">
+          <Select value={cat} onChange={setCat}>
+            {cats.map((c) => <option key={c.n} value={c.n}>{c.n}</option>)}
+          </Select>
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Parcelado?">
+            <Select value={parcelar ? "sim" : "nao"} onChange={(v) => setParcelar(v === "sim")}>
+              <option value="nao">Não</option>
+              <option value="sim">Sim</option>
+            </Select>
+          </Field>
+          {parcelar && (
+            <Field label="Nº de parcelas">
+              <Input type="number" value={String(parcelas)} onChange={(v) => setParcelas(parseInt(v) || 2)} />
+            </Field>
+          )}
+        </div>
+
+        {/* Saldo positivo: auto-consumo */}
+        {saldoPos > 0 && (
+          <div className="mb-4 p-3 rounded-lg"
+            style={{ background: "rgba(16,185,129,.08)", border: "1px solid rgba(16,185,129,.25)" }}>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={usarSaldo}
+                onChange={(e) => setUsarSaldo(e.target.checked)}
+                className="mt-0.5"
+              />
+              <div className="flex-1">
+                <div className="font-dm text-[11px] font-semibold" style={{ color: "#10b981" }}>
+                  Consumir saldo positivo (R$ {fmtBRL(saldoPos)})
+                </div>
+                <div className="font-dm text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                  Usa o crédito disponível no cartão para abater este gasto automaticamente.
+                </div>
+              </div>
+            </label>
+            {valorValido && usarSaldo && (
+              <div className="mt-2 pt-2 font-dm text-[10px] space-y-0.5"
+                style={{ borderTop: "1px dashed rgba(16,185,129,.25)", color: "var(--text-secondary)" }}>
+                <div className="flex justify-between">
+                  <span>Valor da compra</span>
+                  <span className="font-mono">R$ {fmtBRL(valorNum)}</span>
+                </div>
+                <div className="flex justify-between" style={{ color: "#10b981" }}>
+                  <span>− Saldo positivo aplicado</span>
+                  <span className="font-mono">R$ {fmtBRL(saldoAplicado)}</span>
+                </div>
+                <div className="flex justify-between font-semibold pt-1"
+                  style={{ borderTop: "1px dashed rgba(16,185,129,.25)", color: "var(--text-primary)" }}>
+                  <span>Vai entrar na fatura</span>
+                  <span className="font-mono">R$ {fmtBRL(faturaAdicional)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-2 mt-5">
+          <button onClick={onClose}
+            className="flex-1 py-3 rounded-lg font-dm text-xs font-semibold"
+            style={{ background: "var(--bg-hover)", color: "var(--text-secondary)", border: "1px solid var(--border-default)" }}>
+            Cancelar
+          </button>
+          <button onClick={() => {
+            if (!desc.trim() || !valorValido || !date) { alert("Preencha descrição, valor e data."); return; }
+            onSubmit({
+              desc, val: valorNum, date, cat,
+              parcelar, parcelas,
+              usar_saldo_positivo: usarSaldo,
+            });
+          }}
+            className="flex-1 py-3 rounded-lg font-dm text-xs font-semibold text-white transition-all hover:brightness-110"
+            style={{ background: cartao.cor }}>
+            Lançar no cartão
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DateChip({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button onClick={onClick}
+      className="px-2.5 py-1 rounded-full font-dm text-[10px] font-semibold transition-all"
+      style={{
+        background: "var(--bg-hover)",
+        color: "var(--text-secondary)",
+        border: "1px solid var(--border-default)",
+      }}>
+      {label}
+    </button>
+  );
+}
+
+function Select({
+  value, onChange, children,
+}: { value: string; onChange: (v: string) => void; children: React.ReactNode }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}
+      className="px-3 py-2.5 rounded-lg font-dm text-sm outline-none cursor-pointer"
+      style={{
+        background: "var(--bg-input)",
+        color: "var(--text-primary)",
+        border: "1px solid var(--border-default)",
+      }}>
+      {children}
+    </select>
   );
 }
 

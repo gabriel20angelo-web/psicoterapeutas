@@ -243,8 +243,102 @@ export function faturaCartaoTotal(
   for (const t of txs) {
     if (t.pay === payKey && !isEntrada(t.type)) total += t.val;
   }
-  // Fixos são recorrentes, não somam como "dívida total"; retorna apenas txs realizados
   return total;
+}
+
+/** Soma das parcelas futuras (após o mês atual) no cartão — a "dívida em aberto". */
+export function parcelasFuturasCartao(
+  cartaoNome: string,
+  txs: Transacao[],
+  refY: number,
+  refM: number
+): { total: number; por_mes: Array<{ y: number; m: number; val: number; count: number }> } {
+  const payKey = "c:" + cartaoNome;
+  const por: Record<string, { y: number; m: number; val: number; count: number }> = {};
+  let total = 0;
+  for (const t of txs) {
+    if (t.pay !== payKey) continue;
+    if (isEntrada(t.type)) continue;
+    if (!t.parc) continue;
+    const d = new Date(t.date + "T12:00:00");
+    const y = d.getFullYear(), m = d.getMonth();
+    if (y < refY || (y === refY && m <= refM)) continue;
+    const key = `${y}-${m}`;
+    if (!por[key]) por[key] = { y, m, val: 0, count: 0 };
+    por[key].val += t.val;
+    por[key].count += 1;
+    total += t.val;
+  }
+  const por_mes = Object.values(por).sort((a, b) =>
+    a.y === b.y ? a.m - b.m : a.y - b.y
+  );
+  return { total, por_mes };
+}
+
+/** Agrupa os parcelamentos abertos em "dívidas" pelo pg (grupo de parcelas). */
+export interface DividaCartao {
+  pg: number;
+  desc: string;
+  total: number;
+  pago: number;
+  restante: number;
+  parcelas_total: number;
+  parcelas_pagas: number;
+  proxima_data?: string;
+}
+
+export function dividasAbertasCartao(
+  cartaoNome: string,
+  txs: Transacao[],
+  refY: number,
+  refM: number
+): DividaCartao[] {
+  const payKey = "c:" + cartaoNome;
+  const grupos: Record<number, Transacao[]> = {};
+  for (const t of txs) {
+    if (t.pay !== payKey) continue;
+    if (isEntrada(t.type)) continue;
+    if (!t.parc || !t.pg) continue;
+    if (!grupos[t.pg]) grupos[t.pg] = [];
+    grupos[t.pg].push(t);
+  }
+  const out: DividaCartao[] = [];
+  for (const pgKey of Object.keys(grupos)) {
+    const pg = Number(pgKey);
+    const parcelas = grupos[pg].slice().sort((a, b) => a.date.localeCompare(b.date));
+    const total = parcelas.reduce((a: number, p: Transacao) => a + p.val, 0);
+    const pagas: Transacao[] = [];
+    const futuras: Transacao[] = [];
+    for (const p of parcelas) {
+      const d = new Date(p.date + "T12:00:00");
+      if (d.getFullYear() < refY || (d.getFullYear() === refY && d.getMonth() <= refM)) pagas.push(p);
+      else futuras.push(p);
+    }
+    if (futuras.length === 0) continue; // já quitada
+    const pago = pagas.reduce((a, p) => a + p.val, 0);
+    out.push({
+      pg,
+      desc: parcelas[0].desc,
+      total,
+      pago,
+      restante: total - pago,
+      parcelas_total: parcelas.length,
+      parcelas_pagas: pagas.length,
+      proxima_data: futuras[0]?.date,
+    });
+  }
+  return out.sort((a, b) => (a.proxima_data || "").localeCompare(b.proxima_data || ""));
+}
+
+/** Fatura projetada para um mês qualquer no futuro (usado em timeline). */
+export function faturaProjetadaMes(
+  cartaoNome: string,
+  txs: Transacao[],
+  fixos: FixoItem[],
+  y: number,
+  m: number
+): number {
+  return faturaCartaoMes(cartaoNome, txs, fixos, y, m).total;
 }
 
 export function saveCats(cats: Categoria[]) { syncSave(KEYS.cats, cats); }

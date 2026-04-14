@@ -272,6 +272,69 @@ function FinancasInner() {
     commit({ cartoes });
   }
 
+  function addGastoCartao(cartao: Cartao, form: {
+    desc: string; val: number; date: string; cat: string;
+    parcelar: boolean; parcelas: number; usar_saldo_positivo: boolean;
+  }) {
+    const { desc, val, date, cat, parcelar, parcelas, usar_saldo_positivo } = form;
+    const pay = "c:" + cartao.nome;
+
+    // Gera transações (com ou sem parcelas)
+    const novasTx: Transacao[] = [];
+    if (parcelar && parcelas > 1) {
+      const [y, m, d] = date.split("-").map(Number);
+      const gid = Date.now();
+      const valParc = +(val / parcelas).toFixed(2);
+      for (let i = 0; i < parcelas; i++) {
+        const dt = new Date(y, m - 1 + i, d);
+        novasTx.push({
+          id: nextId() + i,
+          desc, val: valParc,
+          date: dt.toISOString().slice(0, 10),
+          type: "variavel",
+          cat, pay,
+          parc: `${i + 1}/${parcelas}`,
+          pg: gid,
+        });
+      }
+    } else {
+      novasTx.push({
+        id: nextId(),
+        desc, val, date, type: "variavel", cat, pay,
+        parc: null, pg: null,
+      });
+    }
+
+    // Consumir saldo positivo se pedido
+    let cartoesUpdated = data.cartoes;
+    if (usar_saldo_positivo) {
+      const saldo = cartao.ajustes.reduce(
+        (a, x) => a + (x.tipo === "credito" ? x.valor : -x.valor),
+        0
+      );
+      const aplicado = Math.min(saldo, val);
+      if (aplicado > 0) {
+        cartoesUpdated = data.cartoes.map((c) => c.id === cartao.id
+          ? {
+              ...c,
+              ajustes: [
+                ...c.ajustes,
+                {
+                  id: nextId(),
+                  tipo: "debito" as const,
+                  valor: aplicado,
+                  data: date,
+                  notas: `Consumido em: ${desc}`,
+                },
+              ],
+            }
+          : c);
+      }
+    }
+
+    commit({ txs: [...data.txs, ...novasTx], cartoes: cartoesUpdated });
+  }
+
   // ─── Categorias ───
   function addCat(n: string, c: string) {
     if (!n.trim()) return;
@@ -459,10 +522,12 @@ function FinancasInner() {
           cartoes={data.cartoes}
           txs={data.txs}
           fixos={data.fixos}
+          cats={data.cats}
           mY={mY}
           mM={mM}
           mesLabel={`${MESES[mM]} ${mY}`}
           onSave={saveCartoesList}
+          onAddGasto={addGastoCartao}
         />
       )}
 
