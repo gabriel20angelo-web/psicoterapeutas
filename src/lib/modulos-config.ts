@@ -22,6 +22,7 @@ export const MODULOS_DISPONIVEIS: ModuloConfig[] = [
   { id: "usina",     label: "Usina",     descricao: "Produção e planejamento de conteúdo para redes sociais", href: "/conteudo", icone: "sparkles", ativo: true, fixo: false },
   { id: "forja",     label: "Forja",     descricao: "Timer Pomodoro, tarefas e produtividade",      href: "/forja",       icone: "flame",            ativo: true, fixo: false },
   { id: "academico", label: "Acadêmico", descricao: "Organização acadêmica completa",               href: "/academico",   icone: "graduation-cap",   ativo: true, fixo: false },
+  { id: "financas",  label: "Finanças",  descricao: "Controle financeiro pessoal com fixos e projeção", href: "/financas", icone: "wallet",           ativo: true, fixo: false },
 ];
 
 // ─── LOAD / SAVE ───

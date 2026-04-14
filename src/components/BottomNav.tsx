@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarDays, Users, LayoutDashboard,
-  FileText, Sparkles, Flame, BookOpen, GraduationCap, Settings2, MoreHorizontal, X,
+  FileText, Sparkles, Flame, BookOpen, GraduationCap, Wallet, Settings2, MoreHorizontal, X,
 } from "lucide-react";
 import { getModulosAtivos } from "@/lib/modulos-config";
 
@@ -23,6 +23,7 @@ const ALL_NAV: NavItem[] = [
   { label: "Usina", href: "/conteudo", icon: Sparkles },
   { label: "Forja", href: "/forja", icon: Flame },
   { label: "Acadêmico", href: "/academico", icon: GraduationCap },
+  { label: "Finanças", href: "/financas", icon: Wallet },
   { label: "Config", href: "/configuracoes", icon: Settings2 },
 ];
 

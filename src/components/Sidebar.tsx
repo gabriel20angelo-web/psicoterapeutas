@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   CalendarDays, Users, LayoutDashboard,
-  FileText, BookOpen, Sparkles, Flame, Settings2, GraduationCap,
+  FileText, BookOpen, Sparkles, Flame, Settings2, GraduationCap, Wallet,
 } from "lucide-react";
 
 interface NavItem {
@@ -25,6 +25,7 @@ const ALL_NAV: NavItem[] = [
   { label: "Usina", href: "/conteudo", icon: Sparkles },
   { label: "Forja", href: "/forja", icon: Flame },
   { label: "Acadêmico", href: "/academico", icon: GraduationCap },
+  { label: "Finanças", href: "/financas", icon: Wallet },
 ];
 
 function getFilteredNav(): NavItem[] {
