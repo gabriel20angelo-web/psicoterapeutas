@@ -7,9 +7,9 @@ import {
 } from "lucide-react";
 import {
   type Caixinha, type MovimentoCaixinha, type MovimentoTipo, type MetasFinanceiras,
-  type ResumoMensal, type Categoria,
+  type ResumoMensal, type Categoria, type Pendencia, type Emprestimo,
   fmtBRL, hojeISO, nextId, saldoCaixinha, totalReservado, progressoCaixinha,
-  depositosNoMesCaixinha,
+  depositosNoMesCaixinha, saldoVirtualCaixinha,
 } from "@/lib/financas-data";
 
 const CORES_CAIXINHA = [
@@ -26,12 +26,14 @@ export interface MetasTabProps {
   mY: number;
   mM: number;
   cats: Categoria[];
+  pendencias: Pendencia[];
+  emprestimos: Emprestimo[];
   onSaveCaixinhas: (c: Caixinha[]) => void;
   onSaveMetas: (m: MetasFinanceiras) => void;
 }
 
 export default function MetasTab({
-  caixinhas, metas, resumo, patrimonio, mesLabel, mY, mM, cats,
+  caixinhas, metas, resumo, patrimonio, mesLabel, mY, mM, cats, pendencias, emprestimos,
   onSaveCaixinhas, onSaveMetas,
 }: MetasTabProps) {
   const [caixinhaModal, setCaixinhaModal] = useState<null | { editing: Caixinha | null }>(null);
@@ -173,6 +175,7 @@ export default function MetasTab({
                 c={c}
                 mY={mY}
                 mM={mM}
+                virtual={saldoVirtualCaixinha(c, pendencias, emprestimos)}
                 expanded={expandedCx.has(c.id)}
                 onToggle={() => toggleExpand(c.id)}
                 onDeposito={() => setMovModal({ caixinha: c, tipo: "deposito" })}
@@ -199,6 +202,7 @@ export default function MetasTab({
                   c={c}
                   mY={mY}
                   mM={mM}
+                  virtual={saldoVirtualCaixinha(c, pendencias, emprestimos)}
                   expanded={expandedCx.has(c.id)}
                   onToggle={() => toggleExpand(c.id)}
                   onDeposito={() => setMovModal({ caixinha: c, tipo: "deposito" })}
@@ -543,11 +547,12 @@ function MetaMini({
 // ─── Card: Caixinha ───────────────────────────────
 
 function CaixinhaCard({
-  c, mY, mM, expanded, onToggle, onDeposito, onSaque, onEdit, onArquivar, onDelete, onDeleteMov,
+  c, mY, mM, virtual, expanded, onToggle, onDeposito, onSaque, onEdit, onArquivar, onDelete, onDeleteMov,
 }: {
   c: Caixinha;
   mY: number;
   mM: number;
+  virtual: ReturnType<typeof saldoVirtualCaixinha>;
   expanded: boolean;
   onToggle: () => void;
   onDeposito: () => void;
@@ -603,6 +608,14 @@ function CaixinhaCard({
           <p className="font-mono text-xl font-semibold" style={{ color: c.cor }}>
             R$ {fmtBRL(saldo)}
           </p>
+          {virtual.a_receber > 0 && (
+            <p className="font-mono text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+              + R$ {fmtBRL(virtual.a_receber)} a receber
+              <span className="ml-1 font-dm text-[10px]" style={{ color: c.cor }}>
+                (virtual: R$ {fmtBRL(virtual.total)})
+              </span>
+            </p>
+          )}
         </div>
 
         {c.meta && (
@@ -683,6 +696,30 @@ function CaixinhaCard({
         </div>
       </div>
 
+      {expanded && virtual.fontes.length > 0 && (
+        <div className="p-3"
+          style={{
+            borderTop: "1px solid var(--border-default)",
+            background: `linear-gradient(135deg, ${c.cor}10, transparent)`,
+          }}>
+          <p className="font-dm text-[10px] font-bold uppercase tracking-wider mb-2"
+            style={{ color: "var(--text-tertiary)" }}>
+            A receber (virtual)
+          </p>
+          <div className="space-y-1">
+            {virtual.fontes.map((f, i) => (
+              <div key={i} className="flex justify-between items-center">
+                <span className="font-dm text-[11px] inline-flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
+                  {f.tipo === "pendencia" ? "📥" : "🤝"} {f.desc}
+                </span>
+                <span className="font-mono text-[11px]" style={{ color: c.cor }}>
+                  + R$ {fmtBRL(f.valor)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {expanded && (
         <div style={{ borderTop: "1px solid var(--border-default)", background: "var(--bg-hover)" }}>
           {c.movimentos.length === 0 ? (

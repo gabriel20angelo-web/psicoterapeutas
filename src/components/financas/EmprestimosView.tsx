@@ -7,19 +7,21 @@ import {
 } from "lucide-react";
 import {
   type Emprestimo, type Categoria, type DirecaoEmprestimo, type PagamentoEmprestimo,
+  type Caixinha,
   fmtBRL, hojeISO, emprestimoPago, emprestimoRestante, emprestimoPct, nextId,
 } from "@/lib/financas-data";
 
 export interface EmprestimosViewProps {
   emprestimos: Emprestimo[];
   cats: Categoria[];
+  caixinhas: Caixinha[];
   cartoes: string[];
   onSave: (e: Emprestimo[]) => void;
   onRegistrarPagamento: (emprestimoId: number, pag: PagamentoEmprestimo) => void;
 }
 
 export default function EmprestimosView({
-  emprestimos, cats, cartoes, onSave, onRegistrarPagamento,
+  emprestimos, cats, caixinhas, cartoes, onSave, onRegistrarPagamento,
 }: EmprestimosViewProps) {
   const [modal, setModal] = useState<null | { editing: Emprestimo | null; direcao: DirecaoEmprestimo }>(null);
   const [pagModal, setPagModal] = useState<Emprestimo | null>(null);
@@ -37,13 +39,13 @@ export default function EmprestimosView({
   }
 
   function handleSave(form: EmprestimoForm) {
-    const { editId, direcao, pessoa, valor_original, data, prazo, notas, cat, pay } = form;
+    const { editId, direcao, pessoa, valor_original, data, prazo, notas, cat, pay, caixinha_id } = form;
     if (!pessoa.trim() || isNaN(valor_original) || valor_original <= 0 || !data) {
       alert("Preencha pessoa, valor e data."); return;
     }
     if (editId) {
       onSave(emprestimos.map((e) => e.id === editId
-        ? { ...e, direcao, pessoa, valor_original, data, prazo: prazo || undefined, notas: notas || undefined, cat, pay }
+        ? { ...e, direcao, pessoa, valor_original, data, prazo: prazo || undefined, notas: notas || undefined, cat, pay, caixinha_id }
         : e));
     } else {
       onSave([
@@ -56,6 +58,7 @@ export default function EmprestimosView({
           pagamentos: [],
           notas: notas || undefined,
           cat, pay,
+          caixinha_id,
         },
       ]);
     }
@@ -166,6 +169,7 @@ export default function EmprestimosView({
           editing={modal.editing}
           direcao={modal.direcao}
           cats={cats}
+          caixinhas={caixinhas}
           cartoes={cartoes}
           onClose={() => setModal(null)}
           onSubmit={handleSave}
@@ -343,14 +347,16 @@ interface EmprestimoForm {
   notas: string;
   cat: string;
   pay: string;
+  caixinha_id?: number;
 }
 
 function EmprestimoModal({
-  editing, direcao, cats, cartoes, onClose, onSubmit,
+  editing, direcao, cats, caixinhas, cartoes, onClose, onSubmit,
 }: {
   editing: Emprestimo | null;
   direcao: DirecaoEmprestimo;
   cats: Categoria[];
+  caixinhas: Caixinha[];
   cartoes: string[];
   onClose: () => void;
   onSubmit: (f: EmprestimoForm) => void;
@@ -362,7 +368,9 @@ function EmprestimoModal({
   const [notas, setNotas] = useState(editing?.notas || "");
   const [cat, setCat] = useState(editing?.cat || cats[0]?.n || "Outros");
   const [pay, setPay] = useState(editing?.pay || "pix");
+  const [caixinhaId, setCaixinhaId] = useState(editing?.caixinha_id ? String(editing.caixinha_id) : "");
   const emp = direcao === "emprestei";
+  const ativas = caixinhas.filter((c) => !c.arquivada);
 
   return (
     <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
@@ -405,6 +413,20 @@ function EmprestimoModal({
             <PaySelect value={pay} onChange={setPay} cartoes={cartoes} />
           </Field>
         </div>
+        {emp && ativas.length > 0 && (
+          <Field label="Destinar recebimentos a uma caixinha (opcional)">
+            <select value={caixinhaId} onChange={(e) => setCaixinhaId(e.target.value)}
+              className="px-3 py-2.5 rounded-lg font-dm text-sm outline-none cursor-pointer"
+              style={{
+                background: "var(--bg-input)", color: "var(--text-primary)",
+                border: "1px solid var(--border-default)",
+              }}>
+              <option value="">— Nenhuma —</option>
+              {ativas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </Field>
+        )}
+
         <Field label="Notas (opcional)">
           <Input value={notas} onChange={setNotas} placeholder="Observações..." />
         </Field>
@@ -418,6 +440,7 @@ function EmprestimoModal({
           <button onClick={() => onSubmit({
             editId: editing?.id ?? null,
             direcao, pessoa, valor_original: parseFloat(valor), data, prazo, notas, cat, pay,
+            caixinha_id: caixinhaId ? parseInt(caixinhaId) : undefined,
           })}
             className="flex-1 py-3 rounded-lg font-dm text-xs font-semibold text-white transition-all hover:brightness-110"
             style={{ background: emp ? "#60a5fa" : "#fb923c" }}>

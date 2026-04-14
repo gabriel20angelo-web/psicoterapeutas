@@ -9,6 +9,7 @@ import {
   type Pendencia, type Categoria, type PendenciaKind,
   type Emprestimo, type PagamentoEmprestimo, type Caixinha,
   fmtBRL, labelPay, isVencida, diasAteVencer, hojeISO, agruparDividas, nextId,
+  valorPagoPendencia, valorRestantePendencia,
   type DividaGrupo,
 } from "@/lib/financas-data";
 import EmprestimosView from "./EmprestimosView";
@@ -31,7 +32,7 @@ export interface PendenciasTabProps {
   cartoes: string[];
   onSave: (pendencias: Pendencia[]) => void;
   onSaveEmprestimos: (e: Emprestimo[]) => void;
-  onQuitar: (id: number, payDate: string) => void;
+  onQuitar: (id: number, payDate: string, valorParcial?: number) => void;
   onRegistrarPagamentoEmprestimo: (emprestimoId: number, pag: PagamentoEmprestimo) => void;
 }
 
@@ -184,6 +185,7 @@ export default function PendenciasTab({
         <EmprestimosView
           emprestimos={emprestimos}
           cats={cats}
+          caixinhas={caixinhas}
           cartoes={cartoes}
           onSave={onSaveEmprestimos}
           onRegistrarPagamento={onRegistrarPagamentoEmprestimo}
@@ -222,8 +224,8 @@ export default function PendenciasTab({
         <QuitarModal
           pendencia={quitarModal}
           onClose={() => setQuitarModal(null)}
-          onConfirm={(payDate) => {
-            onQuitar(quitarModal.id, payDate);
+          onConfirm={(payDate, valorParcial) => {
+            onQuitar(quitarModal.id, payDate, valorParcial);
             setQuitarModal(null);
           }}
         />
@@ -350,6 +352,11 @@ function ListaPendencias({
                       style={{ color: pagar ? "#ef4444" : "#10b981" }}>
                       {pagar ? "− " : "+ "}R$ {fmtBRL(p.val)}
                     </span>
+                    {valorPagoPendencia(p) > 0 && p.status === "aberto" && (
+                      <div className="font-dm text-[10px]" style={{ color: "var(--orange-500)" }}>
+                        R$ {fmtBRL(valorPagoPendencia(p))} pago · restam R$ {fmtBRL(valorRestantePendencia(p))}
+                      </div>
+                    )}
                     <div className="font-dm text-[10px]" style={{ color: "var(--text-tertiary)" }}>
                       {labelPay(p.pay)}
                     </div>
@@ -686,33 +693,91 @@ function PendenciaModal({
 
 function QuitarModal({
   pendencia, onClose, onConfirm,
-}: { pendencia: Pendencia; onClose: () => void; onConfirm: (date: string) => void }) {
+}: {
+  pendencia: Pendencia;
+  onClose: () => void;
+  onConfirm: (date: string, valorParcial?: number) => void;
+}) {
+  const restante = valorRestantePendencia(pendencia);
+  const jaPago = valorPagoPendencia(pendencia);
   const [date, setDate] = useState(hojeISO());
+  const [parcial, setParcial] = useState(false);
+  const [valor, setValor] = useState(restante.toFixed(2));
   const pagar = pendencia.kind === "pagar";
+  const vNum = parseFloat(valor);
+  const vValido = !isNaN(vNum) && vNum > 0 && vNum <= restante + 0.005;
+  const seraQuitada = !parcial || vNum + 0.005 >= restante;
+
   return (
     <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="rounded-2xl w-full max-w-sm p-6"
         style={{ background: "var(--bg-card-elevated)", border: "1px solid var(--border-default)" }}>
-        <h2 className="font-fraunces text-lg mb-3" style={{ color: "var(--text-primary)" }}>
-          {pagar ? "Marcar como pago" : "Marcar como recebido"}
+        <h2 className="font-fraunces text-lg mb-2" style={{ color: "var(--text-primary)" }}>
+          {pagar ? "Registrar pagamento" : "Registrar recebimento"}
         </h2>
-        <p className="font-dm text-xs mb-4" style={{ color: "var(--text-secondary)" }}>
-          <strong style={{ color: "var(--text-primary)" }}>{pendencia.desc}</strong> — R$ {fmtBRL(pendencia.val)}
+        <p className="font-dm text-xs mb-1" style={{ color: "var(--text-secondary)" }}>
+          <strong style={{ color: "var(--text-primary)" }}>{pendencia.desc}</strong>
         </p>
-        <p className="font-dm text-[11px] mb-4" style={{ color: "var(--text-tertiary)" }}>
-          Isso vai criar um lançamento real na data escolhida e marcar a pendência como quitada.
+        <p className="font-dm text-[11px] mb-3" style={{ color: "var(--text-tertiary)" }}>
+          Total: R$ {fmtBRL(pendencia.val)}
+          {jaPago > 0 && <> · Já pago: R$ {fmtBRL(jaPago)}</>}
+          {" · "}Restante: <strong style={{ color: "var(--orange-500)" }}>R$ {fmtBRL(restante)}</strong>
         </p>
+
         <Field label={pagar ? "Data de pagamento" : "Data de recebimento"}>
           <Input type="date" value={date} onChange={setDate} />
         </Field>
+
+        <div className="flex flex-col gap-2 mb-3 p-2.5 rounded-lg"
+          style={{ background: "var(--bg-hover)", border: "1px solid var(--border-default)" }}>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" checked={!parcial} onChange={() => { setParcial(false); setValor(restante.toFixed(2)); }} />
+            <span className="font-dm text-[11px]" style={{ color: "var(--text-secondary)" }}>
+              {pagar ? "Pagar valor total" : "Receber valor total"} · R$ {fmtBRL(restante)}
+            </span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" checked={parcial} onChange={() => setParcial(true)} />
+            <span className="font-dm text-[11px]" style={{ color: "var(--text-secondary)" }}>
+              {pagar ? "Pagar" : "Receber"} valor parcial
+            </span>
+          </label>
+          {parcial && (
+            <div className="mt-1">
+              <input type="number" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)}
+                autoFocus
+                className="w-full px-3 py-2 rounded-md font-dm text-sm outline-none"
+                style={{
+                  background: "var(--bg-input)", color: "var(--text-primary)",
+                  border: "1px solid var(--border-default)", colorScheme: "dark",
+                }}
+                placeholder="Valor a registrar"
+              />
+              {vValido && !seraQuitada && (
+                <p className="font-dm text-[10px] mt-1" style={{ color: "var(--text-tertiary)" }}>
+                  Vai ficar R$ {fmtBRL(restante - vNum)} em aberto.
+                </p>
+              )}
+              {vValido && seraQuitada && (
+                <p className="font-dm text-[10px] mt-1" style={{ color: "#10b981" }}>
+                  Cobre o total restante. A pendência vai ser quitada.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="flex gap-2 mt-4">
           <button onClick={onClose}
             className="flex-1 py-2.5 rounded-lg font-dm text-xs font-semibold"
             style={{ background: "var(--bg-hover)", color: "var(--text-secondary)", border: "1px solid var(--border-default)" }}>
             Cancelar
           </button>
-          <button onClick={() => onConfirm(date)}
+          <button onClick={() => {
+            if (parcial && !vValido) { alert("Valor inválido."); return; }
+            onConfirm(date, parcial ? vNum : undefined);
+          }}
             className="flex-1 py-2.5 rounded-lg font-dm text-xs font-semibold text-white"
             style={{ background: "#10b981" }}>
             Confirmar

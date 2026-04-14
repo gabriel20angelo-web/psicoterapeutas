@@ -40,6 +40,14 @@ export interface FixoItem {
 export type PendenciaKind = "pagar" | "receber";
 export type PendenciaStatus = "aberto" | "quitado" | "cancelado";
 
+export interface PagamentoParcialPendencia {
+  id: number;
+  data: string;
+  valor: number;
+  tx_id?: number;
+  notas?: string;
+}
+
 export interface Pendencia {
   id: number;
   kind: PendenciaKind;
@@ -58,6 +66,8 @@ export interface Pendencia {
   notas?: string;
   /** Caixinha destino (a_receber) ou origem (a_pagar) quando a pendência for quitada. */
   caixinha_id?: number;
+  /** Histórico de pagamentos parciais. Quando soma >= val, pendência é quitada. */
+  pagamentos_parciais?: PagamentoParcialPendencia[];
 }
 
 export type DirecaoEmprestimo = "emprestei" | "peguei";
@@ -82,6 +92,8 @@ export interface Emprestimo {
   notas?: string;
   cat?: string;
   pay?: string;
+  /** Quando emprestei: caixinha destino dos recebimentos. */
+  caixinha_id?: number;
 }
 
 export interface Orcamento {
@@ -370,6 +382,49 @@ export function totalReservado(caixinhas: Caixinha[]): number {
     .reduce((a, c) => a + saldoCaixinha(c), 0);
 }
 
+/**
+ * Saldo virtual de uma caixinha: saldo real + valores que ainda vão entrar.
+ * Soma: pendências "a receber" abertas vinculadas + restante de empréstimos
+ * "emprestei" vinculados.
+ */
+export interface SaldoVirtualCaixinha {
+  real: number;
+  a_receber: number;
+  total: number;
+  fontes: Array<{ tipo: "pendencia" | "emprestimo"; desc: string; valor: number }>;
+}
+
+export function saldoVirtualCaixinha(
+  c: Caixinha,
+  pendencias: Pendencia[],
+  emprestimos: Emprestimo[]
+): SaldoVirtualCaixinha {
+  const real = saldoCaixinha(c);
+  const fontes: SaldoVirtualCaixinha["fontes"] = [];
+  let a_receber = 0;
+
+  for (const p of pendencias) {
+    if (p.caixinha_id !== c.id) continue;
+    if (p.kind !== "receber") continue;
+    if (p.status !== "aberto") continue;
+    const restante = valorRestantePendencia(p);
+    if (restante <= 0) continue;
+    a_receber += restante;
+    fontes.push({ tipo: "pendencia", desc: p.desc, valor: restante });
+  }
+
+  for (const e of emprestimos) {
+    if (e.caixinha_id !== c.id) continue;
+    if (e.direcao !== "emprestei") continue;
+    const restante = emprestimoRestante(e);
+    if (restante <= 0) continue;
+    a_receber += restante;
+    fontes.push({ tipo: "emprestimo", desc: e.pessoa, valor: restante });
+  }
+
+  return { real, a_receber, total: real + a_receber, fontes };
+}
+
 /** Depósitos feitos em uma caixinha durante um mês específico. */
 export function depositosNoMesCaixinha(c: Caixinha, y: number, m: number): number {
   return c.movimentos
@@ -407,6 +462,66 @@ export function saldoReal(data: FinancasData): number {
 /** Saldo real menos o que está reservado em caixinhas. */
 export function saldoLivre(data: FinancasData): number {
   return saldoReal(data) - totalReservado(data.caixinhas);
+}
+
+/** Crédito positivo total em cartões ativos (dinheiro que ainda vai ser consumido). */
+export function creditoTotalCartoes(cartoes: Cartao[]): number {
+  return cartoes
+    .filter((c) => c.ativo)
+    .reduce((a, c) => a + Math.max(0, saldoPositivoCartao(c)), 0);
+}
+
+/** Dívida líquida do cartão no mês = fatura − saldo positivo (nunca negativa). */
+export function dividaCartaoMes(
+  cartao: Cartao,
+  txs: Transacao[],
+  fixos: FixoItem[],
+  y: number,
+  m: number
+): number {
+  const fat = faturaCartaoMes(cartao.nome, txs, fixos, y, m).total;
+  const saldo = Math.max(0, saldoPositivoCartao(cartao));
+  return Math.max(0, fat - saldo);
+}
+
+/** Dívida total no mês somada sobre todos os cartões ativos. */
+export function dividaTotalCartoesMes(
+  cartoes: Cartao[],
+  txs: Transacao[],
+  fixos: FixoItem[],
+  y: number,
+  m: number
+): number {
+  return cartoes
+    .filter((c) => c.ativo)
+    .reduce((a, c) => a + dividaCartaoMes(c, txs, fixos, y, m), 0);
+}
+
+/**
+ * Aplica efeito de categoria vinculada: se uma tx cai numa categoria que tem
+ * caixinha vinculada, move dinheiro automaticamente (entrada → depósito; gasto → saque).
+ * Retorna o array atualizado de caixinhas (idempotente em relação às não vinculadas).
+ */
+export function aplicarCategoriaCaixinhas(
+  tx: Transacao,
+  caixinhas: Caixinha[]
+): Caixinha[] {
+  const entrada = isEntrada(tx.type);
+  return caixinhas.map((c) => {
+    if (c.arquivada) return c;
+    if (!c.cat_vinculada || c.cat_vinculada !== tx.cat) return c;
+    const disponivel = saldoCaixinha(c);
+    const valor = entrada ? tx.val : Math.min(tx.val, disponivel);
+    if (valor <= 0) return c;
+    const mov: MovimentoCaixinha = {
+      id: nextId(),
+      tipo: entrada ? "deposito" : "saque",
+      valor,
+      data: tx.date,
+      notas: `Auto (${tx.desc})`,
+    };
+    return { ...c, movimentos: [...c.movimentos, mov] };
+  });
 }
 
 // ─── Disponível e metas mensais ───
@@ -664,11 +779,11 @@ export function agruparDividas(pendencias: Pendencia[]): DividaGrupo[] {
 }
 
 /** Cria transação realizada a partir de uma pendência (quitação). */
-export function pendenciaToTx(p: Pendencia, payDate: string): Transacao {
+export function pendenciaToTx(p: Pendencia, payDate: string, valor?: number): Transacao {
   return {
     id: nextId(),
     desc: p.desc,
-    val: p.val,
+    val: valor ?? p.val,
     date: payDate,
     type: p.kind === "pagar" ? "variavel" : "entrada",
     cat: p.cat,
@@ -676,6 +791,16 @@ export function pendenciaToTx(p: Pendencia, payDate: string): Transacao {
     parc: p.parc_num && p.parc_total ? `${p.parc_num}/${p.parc_total}` : null,
     pg: p.parent_id || null,
   };
+}
+
+/** Quanto já foi pago de uma pendência (pagamentos parciais). */
+export function valorPagoPendencia(p: Pendencia): number {
+  return (p.pagamentos_parciais || []).reduce((a, pp) => a + pp.valor, 0);
+}
+
+/** Quanto ainda resta pagar de uma pendência. */
+export function valorRestantePendencia(p: Pendencia): number {
+  return Math.max(0, p.val - valorPagoPendencia(p));
 }
 
 // ─── Helpers ───

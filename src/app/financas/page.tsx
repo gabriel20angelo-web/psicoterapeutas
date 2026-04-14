@@ -16,9 +16,12 @@ import {
   MESES, fmtBRL, fmtDiaMes, labelPay, isEntrada, lancamentosDoMes, nextId,
   resumoPendencias, pendenciaToTx, hojeISO, pagamentoEmprestimoToTx, gastosPorCategoriaMes,
   resumoMensal, totalReservado, saldoReal, saldoLivre, fixoMesKey,
+  creditoTotalCartoes, dividaCartaoMes, dividaTotalCartoesMes, aplicarCategoriaCaixinhas,
+  valorPagoPendencia, valorRestantePendencia,
+  saldoPositivoCartao, faturaCartaoMes,
   type FinancasData, type Transacao, type FixoItem, type Categoria, type TxType, type Pendencia,
   type Emprestimo, type PagamentoEmprestimo, type Orcamento, type Caixinha, type MetasFinanceiras,
-  type Cartao, type MovimentoCaixinha,
+  type Cartao, type MovimentoCaixinha, type PagamentoParcialPendencia,
 } from "@/lib/financas-data";
 
 type TabId = "lancamentos" | "fixos" | "pendencias" | "metas" | "cartoes" | "categorias" | "graficos" | "projecao";
@@ -160,6 +163,7 @@ function FinancasInner() {
     const { desc, val, date, type, cat, pay, parcelado, parcelas, editId } = form;
     if (!desc.trim() || isNaN(val) || !date) { alert("Preencha todos os campos."); return; }
     let newTxs = [...data.txs];
+    let newCaixinhas = data.caixinhas;
     if (editId) {
       newTxs = newTxs.map((t) => t.id === editId ? { ...t, desc, val, date, type, cat, pay } : t);
     } else if (parcelado && parcelas > 1) {
@@ -167,18 +171,24 @@ function FinancasInner() {
       const gid = Date.now();
       for (let i = 0; i < parcelas; i++) {
         const dt = new Date(y, m - 1 + i, d);
-        newTxs.push({
+        const newTx: Transacao = {
           id: nextId() + i,
           desc, val: +(val / parcelas).toFixed(2),
           date: dt.toISOString().slice(0, 10),
           type, cat, pay,
           parc: `${i + 1}/${parcelas}`, pg: gid,
-        });
+        };
+        newTxs.push(newTx);
+        newCaixinhas = aplicarCategoriaCaixinhas(newTx, newCaixinhas);
       }
     } else {
-      newTxs.push({ id: nextId(), desc, val, date, type, cat, pay, parc: null, pg: null });
+      const newTx: Transacao = {
+        id: nextId(), desc, val, date, type, cat, pay, parc: null, pg: null,
+      };
+      newTxs.push(newTx);
+      newCaixinhas = aplicarCategoriaCaixinhas(newTx, newCaixinhas);
     }
-    commit({ txs: newTxs });
+    commit({ txs: newTxs, caixinhas: newCaixinhas });
     setModal(null);
   }
 
@@ -208,31 +218,55 @@ function FinancasInner() {
     commit({ pendencias });
   }
 
-  function quitarPendencia(id: number, payDate: string) {
+  function quitarPendencia(id: number, payDate: string, valorPago?: number) {
     const p = data.pendencias.find((x) => x.id === id);
     if (!p) return;
-    const tx = pendenciaToTx(p, payDate);
+    const restante = valorRestantePendencia(p);
+    const valor = valorPago != null && valorPago > 0 ? Math.min(valorPago, restante) : restante;
+    if (valor <= 0) return;
+
+    const tx = pendenciaToTx(p, payDate, valor);
+
+    const novoPagamento: PagamentoParcialPendencia = {
+      id: nextId(),
+      data: payDate,
+      valor,
+      tx_id: tx.id,
+    };
+    const pagamentosAtualizados = [...(p.pagamentos_parciais || []), novoPagamento];
+    const totalPago = pagamentosAtualizados.reduce((a, pp) => a + pp.valor, 0);
+    const quitadoCompleto = totalPago + 0.005 >= p.val;
+
     const newPendencias = data.pendencias.map((x) =>
-      x.id === id ? { ...x, status: "quitado" as const, quitado_em: payDate, tx_id: tx.id } : x
+      x.id === id
+        ? {
+            ...x,
+            pagamentos_parciais: pagamentosAtualizados,
+            status: quitadoCompleto ? ("quitado" as const) : ("aberto" as const),
+            quitado_em: quitadoCompleto ? payDate : x.quitado_em,
+            tx_id: quitadoCompleto ? tx.id : x.tx_id,
+          }
+        : x
     );
 
-    // Se pendência estava vinculada a uma caixinha, criar movimento compatível
+    // Se pendência estava vinculada a uma caixinha, criar movimento compatível (pelo valor pago agora)
     let newCaixinhas = data.caixinhas;
     if (p.caixinha_id) {
       const tipo: MovimentoCaixinha["tipo"] = p.kind === "receber" ? "deposito" : "saque";
       const mov: MovimentoCaixinha = {
         id: nextId(),
         tipo,
-        valor: p.val,
+        valor,
         data: payDate,
-        notas: p.kind === "receber"
-          ? `Recebido: ${p.desc}`
-          : `Pago: ${p.desc}`,
+        notas: p.kind === "receber" ? `Recebido: ${p.desc}` : `Pago: ${p.desc}`,
       };
-      newCaixinhas = data.caixinhas.map((c) => c.id === p.caixinha_id
+      newCaixinhas = newCaixinhas.map((c) => c.id === p.caixinha_id
         ? { ...c, movimentos: [...c.movimentos, mov] }
         : c);
     }
+
+    // Auto cat vinculada
+    newCaixinhas = aplicarCategoriaCaixinhas(tx, newCaixinhas);
 
     commit({ txs: [...data.txs, tx], pendencias: newPendencias, caixinhas: newCaixinhas });
   }
@@ -261,7 +295,26 @@ function FinancasInner() {
         status: pago >= x.valor_original ? "quitado" as const : "aberto" as const,
       };
     });
-    commit({ txs: [...data.txs, tx], emprestimos: newEmprestimos });
+
+    // Se for "emprestei" com caixinha destino, depositar na caixinha ao receber
+    let newCaixinhas = data.caixinhas;
+    if (e.direcao === "emprestei" && e.caixinha_id) {
+      const mov: MovimentoCaixinha = {
+        id: nextId(),
+        tipo: "deposito",
+        valor: pag.valor,
+        data: pag.data,
+        notas: `Recebimento de empréstimo: ${e.pessoa}`,
+      };
+      newCaixinhas = newCaixinhas.map((c) => c.id === e.caixinha_id
+        ? { ...c, movimentos: [...c.movimentos, mov] }
+        : c);
+    }
+
+    // Auto cat vinculada
+    newCaixinhas = aplicarCategoriaCaixinhas(tx, newCaixinhas);
+
+    commit({ txs: [...data.txs, tx], emprestimos: newEmprestimos, caixinhas: newCaixinhas });
   }
 
   // ─── Orçamentos ───
@@ -288,6 +341,16 @@ function FinancasInner() {
   const resumo = useMemo(() => resumoMensal(data, mY, mM), [data, mY, mM]);
   const saldoRealVal = useMemo(() => saldoReal(data), [data]);
   const saldoLivreVal = useMemo(() => saldoLivre(data), [data]);
+  const creditoCartoes = useMemo(() => creditoTotalCartoes(data.cartoes), [data.cartoes]);
+  const dividaCartoes = useMemo(
+    () => dividaTotalCartoesMes(data.cartoes, data.txs, data.fixos, mY, mM),
+    [data.cartoes, data.txs, data.fixos, mY, mM]
+  );
+
+  // Contexto do fixo-a-pagar que abre o modal de realização
+  const [realizarModal, setRealizarModal] = useState<FixoItem | null>(null);
+  // Modal de ajuste manual de saldo
+  const [ajusteSaldoModal, setAjusteSaldoModal] = useState(false);
 
   // Realizar fixo: cria tx real + marca fixo como realizado + opcional saque caixinha
   function realizarFixo(fixoId: number, payDate: string, caixinhaId?: number) {
@@ -321,18 +384,23 @@ function FinancasInner() {
         data: payDate,
         notas: `Pagamento de fixo: ${f.desc}`,
       };
-      newCaixinhas = data.caixinhas.map((c) => c.id === caixinhaId
+      newCaixinhas = newCaixinhas.map((c) => c.id === caixinhaId
         ? { ...c, movimentos: [...c.movimentos, mov] }
         : c);
     }
 
+    // Auto cat vinculada (exceto a caixinha que já recebeu o saque manual)
+    newCaixinhas = aplicarCategoriaCaixinhas(tx, newCaixinhas);
+
     commit({ txs: [...data.txs, tx], fixos: newFixos, caixinhas: newCaixinhas });
+    setRealizarModal(null);
   }
 
-  // Desfazer realização (se errar)
+  // Desmarcar uma realização de fixo (volta a ser projetado naquele mês)
   function desrealizarFixo(fixoId: number, mesKey: string) {
     const f = data.fixos.find((x) => x.id === fixoId);
     if (!f || !f.realizacoes?.[mesKey]) return;
+    if (!confirm("Desfazer o pagamento deste fixo neste mês? A transação associada será removida.")) return;
     const txId = f.realizacoes[mesKey];
     const novasRealiz = { ...f.realizacoes };
     delete novasRealiz[mesKey];
@@ -340,6 +408,30 @@ function FinancasInner() {
       txs: data.txs.filter((t) => t.id !== txId),
       fixos: data.fixos.map((x) => x.id === fixoId ? { ...x, realizacoes: novasRealiz } : x),
     });
+  }
+
+  // Ajuste manual do saldo real da conta (cria tx de reconciliação)
+  function ajustarSaldoManual(novoSaldo: number) {
+    const atual = saldoRealVal;
+    const diff = +(novoSaldo - atual).toFixed(2);
+    if (Math.abs(diff) < 0.01) { alert("Sem diferença para ajustar."); return; }
+    const tx: Transacao = {
+      id: nextId(),
+      desc: "Ajuste manual de saldo",
+      val: Math.abs(diff),
+      date: hojeISO(),
+      type: diff > 0 ? "entrada" : "variavel",
+      cat: "Ajuste",
+      pay: "conta",
+      parc: null,
+      pg: null,
+    };
+    let novasCats = data.cats;
+    if (!data.cats.find((c) => c.n === "Ajuste")) {
+      novasCats = [...data.cats, { n: "Ajuste", c: "#94a3b8" }];
+    }
+    commit({ txs: [...data.txs, tx], cats: novasCats });
+    setAjusteSaldoModal(false);
   }
 
   function saveCartoesList(cartoes: Cartao[]) {
@@ -406,7 +498,13 @@ function FinancasInner() {
       }
     }
 
-    commit({ txs: [...data.txs, ...novasTx], cartoes: cartoesUpdated });
+    // Auto cat vinculada (cada tx criada pode ativar uma caixinha vinculada)
+    let caixinhasUpdated = data.caixinhas;
+    for (const t of novasTx) {
+      caixinhasUpdated = aplicarCategoriaCaixinhas(t, caixinhasUpdated);
+    }
+
+    commit({ txs: [...data.txs, ...novasTx], cartoes: cartoesUpdated, caixinhas: caixinhasUpdated });
   }
 
   // ─── Categorias ───
@@ -469,16 +567,28 @@ function FinancasInner() {
       </div>
 
       {/* Banner de saldos reais (global, não mensal) */}
-      <div className="rounded-xl p-4 mb-4 grid grid-cols-3 gap-4"
+      <div className="rounded-xl p-4 mb-3 grid grid-cols-3 gap-4"
         style={{
           background: "var(--bg-card)",
           border: "1px solid var(--border-default)",
         }}>
         <div>
-          <p className="font-dm text-[9px] uppercase tracking-wider font-semibold mb-1"
-            style={{ color: "var(--text-tertiary)" }}>
-            Saldo real na conta
-          </p>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <p className="font-dm text-[9px] uppercase tracking-wider font-semibold"
+              style={{ color: "var(--text-tertiary)" }}>
+              Saldo real na conta
+            </p>
+            <button onClick={() => setAjusteSaldoModal(true)}
+              className="font-dm text-[9px] font-semibold px-2 py-0.5 rounded"
+              style={{
+                background: "var(--orange-glow)",
+                color: "var(--orange-500)",
+                border: "1px solid var(--border-orange)",
+              }}
+              title="Ajustar manualmente para bater com sua conta">
+              Ajustar
+            </button>
+          </div>
           <p className="font-fraunces text-xl" style={{ color: saldoRealVal >= 0 ? "var(--text-primary)" : "#ef4444" }}>
             R$ {fmtBRL(Math.abs(saldoRealVal))}
           </p>
@@ -511,6 +621,64 @@ function FinancasInner() {
           </p>
         </div>
       </div>
+
+      {/* Banner dos cartões */}
+      {data.cartoes.some((c) => c.ativo) && (
+        <button
+          onClick={() => setTab("cartoes")}
+          className="w-full rounded-xl p-3 mb-4 flex items-center gap-3 text-left transition-all hover:brightness-105"
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-default)",
+          }}>
+          <div className="flex-1 grid grid-cols-2 gap-4">
+            <div>
+              <p className="font-dm text-[9px] uppercase tracking-wider font-semibold"
+                style={{ color: "var(--text-tertiary)" }}>
+                Crédito em cartões
+              </p>
+              <p className="font-mono text-base font-semibold"
+                style={{ color: creditoCartoes > 0 ? "#10b981" : "var(--text-tertiary)" }}>
+                {creditoCartoes > 0 ? "+ " : ""}R$ {fmtBRL(creditoCartoes)}
+              </p>
+            </div>
+            <div style={{ borderLeft: "1px solid var(--border-subtle)", paddingLeft: 16 }}>
+              <p className="font-dm text-[9px] uppercase tracking-wider font-semibold"
+                style={{ color: "var(--text-tertiary)" }}>
+                Dívida do mês em cartões
+              </p>
+              <p className="font-mono text-base font-semibold"
+                style={{ color: dividaCartoes > 0 ? "#ef4444" : "var(--text-tertiary)" }}>
+                {dividaCartoes > 0 ? "− " : ""}R$ {fmtBRL(dividaCartoes)}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5 max-w-[40%]">
+            {data.cartoes.filter((c) => c.ativo).map((c) => {
+              const credito = Math.max(0, saldoPositivoCartao(c));
+              const divida = dividaCartaoMes(c, data.txs, data.fixos, mY, mM);
+              return (
+                <div key={c.id}
+                  className="px-2 py-1 rounded-md font-dm text-[9px] inline-flex items-center gap-1"
+                  style={{
+                    background: c.cor + "15",
+                    border: `1px solid ${c.cor}33`,
+                    color: "var(--text-secondary)",
+                  }}>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.cor }} />
+                  <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{c.nome}</span>
+                  {credito > 0 && (
+                    <span style={{ color: "#10b981" }}>+{fmtBRL(credito)}</span>
+                  )}
+                  {divida > 0 && (
+                    <span style={{ color: "#ef4444" }}>−{fmtBRL(divida)}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </button>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -618,7 +786,10 @@ function FinancasInner() {
           cats={data.cats}
           onEdit={(t) => setModal({ mode: isEntrada(t.type) ? "entrada" : "gasto", editId: t.id })}
           onDelete={deleteTx}
-          onRealizarFixo={(fixoId) => realizarFixo(fixoId, hojeISO())}
+          onRealizarFixo={(fixoId) => {
+            const f = data.fixos.find((x) => x.id === fixoId);
+            if (f) setRealizarModal(f);
+          }}
         />
       )}
 
@@ -633,6 +804,7 @@ function FinancasInner() {
           onSubmit={submitFixo}
           onToggle={toggleFixo}
           onDelete={deleteFixo}
+          onDesrealizar={desrealizarFixo}
         />
       )}
 
@@ -660,6 +832,8 @@ function FinancasInner() {
           mY={mY}
           mM={mM}
           cats={data.cats}
+          pendencias={data.pendencias}
+          emprestimos={data.emprestimos}
           onSaveCaixinhas={saveCaixinhasList}
           onSaveMetas={saveMetasObj}
         />
@@ -707,6 +881,23 @@ function FinancasInner() {
           cartoes={cartoesConhecidos}
           onClose={() => setModal(null)}
           onSubmit={submitTx}
+        />
+      )}
+
+      {realizarModal && (
+        <RealizarFixoModal
+          fixo={realizarModal}
+          caixinhas={data.caixinhas.filter((c) => !c.arquivada)}
+          onClose={() => setRealizarModal(null)}
+          onConfirm={(payDate, caixinhaId) => realizarFixo(realizarModal.id, payDate, caixinhaId)}
+        />
+      )}
+
+      {ajusteSaldoModal && (
+        <AjusteSaldoModal
+          saldoAtual={saldoRealVal}
+          onClose={() => setAjusteSaldoModal(false)}
+          onConfirm={ajustarSaldoManual}
         />
       )}
 
@@ -932,7 +1123,7 @@ interface FixoForm {
 }
 
 function FixosTab({
-  fixos, cats, cartoes, editing, onStartEdit, onCancelEdit, onSubmit, onToggle, onDelete,
+  fixos, cats, cartoes, editing, onStartEdit, onCancelEdit, onSubmit, onToggle, onDelete, onDesrealizar,
 }: {
   fixos: FixoItem[];
   cats: Categoria[];
@@ -941,6 +1132,7 @@ function FixosTab({
   onStartEdit: (f: FixoItem) => void;
   onCancelEdit: () => void;
   onSubmit: (f: FixoForm) => void;
+  onDesrealizar: (fixoId: number, mesKey: string) => void;
   onToggle: (id: number) => void;
   onDelete: (id: number) => void;
 }) {
@@ -1078,7 +1270,31 @@ function FixosTab({
                       borderBottom: "1px solid var(--border-subtle)",
                       opacity: f.active === false ? 0.4 : 1,
                     }}>
-                      <Td><span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{f.desc}</span></Td>
+                      <Td>
+                        <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>{f.desc}</div>
+                        {f.realizacoes && Object.keys(f.realizacoes).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {Object.keys(f.realizacoes).sort().reverse().slice(0, 6).map((key) => {
+                              const [yy, mm] = key.split("-");
+                              return (
+                                <button
+                                  key={key}
+                                  onClick={() => onDesrealizar(f.id, key)}
+                                  className="font-dm text-[9px] px-1.5 py-0.5 rounded inline-flex items-center gap-1 transition-all"
+                                  style={{
+                                    background: "rgba(16,185,129,.1)",
+                                    color: "#10b981",
+                                    border: "1px solid rgba(16,185,129,.2)",
+                                  }}
+                                  title="Desfazer pagamento deste mês"
+                                >
+                                  ✓ {MESES[parseInt(mm) - 1].slice(0, 3)}/{yy.slice(2)} ×
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </Td>
                       <Td>
                         <span className="px-2 py-0.5 rounded font-dm text-[9px] font-bold uppercase tracking-wide"
                           style={tipoPillStyle(entrada ? "entrada" : "fixo")}>
@@ -1746,5 +1962,162 @@ function PaySelect({
       )}
       <option value="__novo">+ Novo cartão...</option>
     </Select>
+  );
+}
+
+// ─── Modal: realizar fixo ─────────────────────────
+
+function RealizarFixoModal({
+  fixo, caixinhas, onClose, onConfirm,
+}: {
+  fixo: FixoItem;
+  caixinhas: Caixinha[];
+  onClose: () => void;
+  onConfirm: (payDate: string, caixinhaId?: number) => void;
+}) {
+  const [payDate, setPayDate] = useState(hojeISO());
+  const [caixinhaId, setCaixinhaId] = useState<string>("");
+  const entrada = fixo.type === "entrada_fixa";
+
+  return (
+    <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="rounded-2xl w-full max-w-sm p-6"
+        style={{ background: "var(--bg-card-elevated)", border: "1px solid var(--border-default)" }}>
+        <h2 className="font-fraunces text-lg mb-1" style={{ color: "var(--text-primary)" }}>
+          {entrada ? "Marcar entrada como recebida" : "Marcar fixo como pago"}
+        </h2>
+        <p className="font-dm text-xs mb-4" style={{ color: "var(--text-secondary)" }}>
+          <strong style={{ color: "var(--text-primary)" }}>{fixo.desc}</strong> — R$ {fmtBRL(fixo.val)}
+        </p>
+        <p className="font-dm text-[11px] mb-3" style={{ color: "var(--text-tertiary)" }}>
+          Cria um lançamento real na data escolhida e marca este fixo como realizado neste mês.
+        </p>
+
+        <div className="flex flex-col gap-1.5 mb-3">
+          <label className="font-dm text-[10px] font-semibold uppercase tracking-wider"
+            style={{ color: "var(--text-tertiary)" }}>
+            Data
+          </label>
+          <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)}
+            className="px-3 py-2.5 rounded-lg font-dm text-sm outline-none"
+            style={{
+              background: "var(--bg-input)", color: "var(--text-primary)",
+              border: "1px solid var(--border-default)", colorScheme: "dark",
+            }}
+          />
+        </div>
+
+        {!entrada && caixinhas.length > 0 && (
+          <div className="flex flex-col gap-1.5 mb-3">
+            <label className="font-dm text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: "var(--text-tertiary)" }}>
+              Pagar a partir de uma caixinha (opcional)
+            </label>
+            <select value={caixinhaId} onChange={(e) => setCaixinhaId(e.target.value)}
+              className="px-3 py-2.5 rounded-lg font-dm text-sm outline-none cursor-pointer"
+              style={{
+                background: "var(--bg-input)", color: "var(--text-primary)",
+                border: "1px solid var(--border-default)",
+              }}>
+              <option value="">— Nenhuma, sai direto da conta —</option>
+              {caixinhas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
+        )}
+
+        <div className="flex gap-2 mt-4">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-lg font-dm text-xs font-semibold"
+            style={{ background: "var(--bg-hover)", color: "var(--text-secondary)", border: "1px solid var(--border-default)" }}>
+            Cancelar
+          </button>
+          <button onClick={() => onConfirm(payDate, caixinhaId ? parseInt(caixinhaId) : undefined)}
+            className="flex-1 py-2.5 rounded-lg font-dm text-xs font-semibold text-white"
+            style={{ background: "#10b981" }}>
+            Confirmar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modal: ajuste manual de saldo ────────────────
+
+function AjusteSaldoModal({
+  saldoAtual, onClose, onConfirm,
+}: {
+  saldoAtual: number;
+  onClose: () => void;
+  onConfirm: (novoSaldo: number) => void;
+}) {
+  const [novo, setNovo] = useState(saldoAtual.toFixed(2));
+  const v = parseFloat(novo);
+  const diff = !isNaN(v) ? +(v - saldoAtual).toFixed(2) : 0;
+
+  return (
+    <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="rounded-2xl w-full max-w-sm p-6"
+        style={{ background: "var(--bg-card-elevated)", border: "1px solid var(--border-default)" }}>
+        <h2 className="font-fraunces text-lg mb-1" style={{ color: "var(--text-primary)" }}>
+          Ajustar saldo da conta
+        </h2>
+        <p className="font-dm text-xs mb-4" style={{ color: "var(--text-secondary)" }}>
+          Se o saldo calculado não bate com o extrato, ajuste aqui. Vamos criar um lançamento de reconciliação na categoria "Ajuste" pra diferença.
+        </p>
+
+        <div className="mb-3 p-3 rounded-lg"
+          style={{ background: "var(--bg-hover)", border: "1px solid var(--border-default)" }}>
+          <p className="font-dm text-[10px] uppercase tracking-wider font-semibold"
+            style={{ color: "var(--text-tertiary)" }}>
+            Saldo calculado agora
+          </p>
+          <p className="font-mono text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+            R$ {fmtBRL(saldoAtual)}
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1.5 mb-3">
+          <label className="font-dm text-[10px] font-semibold uppercase tracking-wider"
+            style={{ color: "var(--text-tertiary)" }}>
+            Saldo real da sua conta (R$)
+          </label>
+          <input type="number" step="0.01" value={novo} onChange={(e) => setNovo(e.target.value)}
+            autoFocus
+            className="px-3 py-2.5 rounded-lg font-dm text-sm outline-none"
+            style={{
+              background: "var(--bg-input)", color: "var(--text-primary)",
+              border: "1px solid var(--border-default)", colorScheme: "dark",
+            }}
+          />
+        </div>
+
+        {!isNaN(v) && Math.abs(diff) > 0.005 && (
+          <div className="mb-3 p-2 rounded-md font-dm text-[11px]"
+            style={{
+              background: diff > 0 ? "rgba(16,185,129,.08)" : "rgba(239,68,68,.08)",
+              color: diff > 0 ? "#10b981" : "#ef4444",
+              border: `1px dashed ${diff > 0 ? "rgba(16,185,129,.25)" : "rgba(239,68,68,.25)"}`,
+            }}>
+            Vamos criar uma {diff > 0 ? "entrada" : "saída"} de R$ {fmtBRL(Math.abs(diff))} como "Ajuste manual de saldo".
+          </div>
+        )}
+
+        <div className="flex gap-2 mt-4">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-lg font-dm text-xs font-semibold"
+            style={{ background: "var(--bg-hover)", color: "var(--text-secondary)", border: "1px solid var(--border-default)" }}>
+            Cancelar
+          </button>
+          <button onClick={() => !isNaN(v) && onConfirm(v)}
+            className="flex-1 py-2.5 rounded-lg font-dm text-xs font-semibold text-white"
+            style={{ background: "var(--orange-500)" }}>
+            Ajustar
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
