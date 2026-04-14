@@ -9,23 +9,26 @@ import Shell from "@/components/Shell";
 import EmptyState from "@/components/ui/EmptyState";
 import PendenciasTab from "@/components/financas/PendenciasTab";
 import MetasTab from "@/components/financas/MetasTab";
+import CartoesTab from "@/components/financas/CartoesTab";
 import {
   getFinancas, saveCats, saveTxs, saveFixos, savePendencias, saveEmprestimos, saveOrcamentos,
-  saveCaixinhas, saveMetas,
+  saveCaixinhas, saveMetas, saveCartoes,
   MESES, fmtBRL, fmtDiaMes, labelPay, isEntrada, lancamentosDoMes, nextId,
   resumoPendencias, pendenciaToTx, hojeISO, pagamentoEmprestimoToTx, gastosPorCategoriaMes,
   resumoMensal, totalReservado,
   type FinancasData, type Transacao, type FixoItem, type Categoria, type TxType, type Pendencia,
   type Emprestimo, type PagamentoEmprestimo, type Orcamento, type Caixinha, type MetasFinanceiras,
+  type Cartao,
 } from "@/lib/financas-data";
 
-type TabId = "lancamentos" | "fixos" | "pendencias" | "metas" | "categorias" | "graficos" | "projecao";
+type TabId = "lancamentos" | "fixos" | "pendencias" | "metas" | "cartoes" | "categorias" | "graficos" | "projecao";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "lancamentos", label: "Lançamentos" },
   { id: "fixos", label: "Fixos" },
   { id: "pendencias", label: "Pendências" },
   { id: "metas", label: "Metas & Caixinhas" },
+  { id: "cartoes", label: "Cartões" },
   { id: "categorias", label: "Categorias" },
   { id: "graficos", label: "Gráficos" },
   { id: "projecao", label: "Projeção" },
@@ -56,7 +59,7 @@ export default function FinancasPage() {
 function FinancasInner() {
   const [data, setData] = useState<FinancasData>({
     cats: [], txs: [], fixos: [], pendencias: [], emprestimos: [], orcamentos: [],
-    caixinhas: [], metas: {},
+    caixinhas: [], metas: {}, cartoes: [],
   });
   const [tab, setTab] = useState<TabId>("lancamentos");
   const [mY, setMY] = useState(() => new Date().getFullYear());
@@ -83,6 +86,7 @@ function FinancasInner() {
       if (next.orcamentos) saveOrcamentos(next.orcamentos);
       if (next.caixinhas) saveCaixinhas(next.caixinhas);
       if (next.metas) saveMetas(next.metas);
+      if (next.cartoes) saveCartoes(next.cartoes);
       return merged;
     });
   }
@@ -135,6 +139,7 @@ function FinancasInner() {
           if (!d.orcamentos) d.orcamentos = [];
           if (!d.caixinhas) d.caixinhas = [];
           if (!d.metas) d.metas = {};
+          if (!d.cartoes) d.cartoes = [];
           commit(d);
           alert("Importado com sucesso.");
         } else alert("Arquivo inválido.");
@@ -263,6 +268,10 @@ function FinancasInner() {
   const patrimonio = useMemo(() => totalReservado(data.caixinhas), [data.caixinhas]);
   const resumo = useMemo(() => resumoMensal(data, mY, mM), [data, mY, mM]);
 
+  function saveCartoesList(cartoes: Cartao[]) {
+    commit({ cartoes });
+  }
+
   // ─── Categorias ───
   function addCat(n: string, c: string) {
     if (!n.trim()) return;
@@ -279,8 +288,9 @@ function FinancasInner() {
     const s = new Set<string>();
     data.txs.forEach((t) => { if (t.pay?.startsWith("c:")) s.add(t.pay.slice(2)); });
     data.fixos.forEach((f) => { if (f.pay?.startsWith("c:")) s.add(f.pay.slice(2)); });
+    data.cartoes.forEach((c) => { if (c.ativo) s.add(c.nome); });
     return Array.from(s);
-  }, [data.txs, data.fixos]);
+  }, [data.txs, data.fixos, data.cartoes]);
 
   // ─── Render ───
 
@@ -441,6 +451,18 @@ function FinancasInner() {
           onSubmit={submitFixo}
           onToggle={toggleFixo}
           onDelete={deleteFixo}
+        />
+      )}
+
+      {tab === "cartoes" && (
+        <CartoesTab
+          cartoes={data.cartoes}
+          txs={data.txs}
+          fixos={data.fixos}
+          mY={mY}
+          mM={mM}
+          mesLabel={`${MESES[mM]} ${mY}`}
+          onSave={saveCartoesList}
         />
       )}
 

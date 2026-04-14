@@ -114,6 +114,29 @@ export interface MetasFinanceiras {
   patrimonio_alvo?: number;
 }
 
+export type AjusteCartaoTipo = "credito" | "debito";
+
+export interface AjusteCartao {
+  id: number;
+  tipo: AjusteCartaoTipo;
+  valor: number;
+  data: string;
+  notas?: string;
+}
+
+export interface Cartao {
+  id: number;
+  nome: string;
+  cor: string;
+  limite?: number;
+  dia_fechamento?: number;
+  dia_vencimento?: number;
+  ajustes: AjusteCartao[];
+  ativo: boolean;
+  criado_em: string;
+  notas?: string;
+}
+
 export interface FinancasData {
   cats: Categoria[];
   txs: Transacao[];
@@ -123,6 +146,7 @@ export interface FinancasData {
   orcamentos: Orcamento[];
   caixinhas: Caixinha[];
   metas: MetasFinanceiras;
+  cartoes: Cartao[];
 }
 
 const KEYS = {
@@ -134,6 +158,7 @@ const KEYS = {
   orcamentos: "fin:orcamentos",
   caixinhas: "fin:caixinhas",
   metas: "fin:metas",
+  cartoes: "fin:cartoes",
 };
 
 const CATS_SEED: Categoria[] = [
@@ -162,7 +187,64 @@ export function getFinancas(): FinancasData {
     orcamentos: syncLoad<Orcamento[]>(KEYS.orcamentos, []),
     caixinhas: syncLoad<Caixinha[]>(KEYS.caixinhas, []),
     metas: syncLoad<MetasFinanceiras>(KEYS.metas, {}),
+    cartoes: syncLoad<Cartao[]>(KEYS.cartoes, []),
   };
+}
+
+export function saveCartoes(c: Cartao[]) { syncSave(KEYS.cartoes, c); }
+
+// ─── Cartão helpers ───
+
+export function saldoPositivoCartao(c: Cartao): number {
+  return c.ajustes.reduce(
+    (a, x) => a + (x.tipo === "credito" ? x.valor : -x.valor),
+    0
+  );
+}
+
+export function faturaCartaoMes(
+  cartaoNome: string,
+  txs: Transacao[],
+  fixos: FixoItem[],
+  y: number,
+  m: number
+): { total: number; itens: { desc: string; val: number; date: string; fixo: boolean }[] } {
+  const payKey = "c:" + cartaoNome;
+  const itens: { desc: string; val: number; date: string; fixo: boolean }[] = [];
+  let total = 0;
+
+  for (const t of txs) {
+    if (t.pay !== payKey) continue;
+    if (isEntrada(t.type)) continue;
+    const d = new Date(t.date + "T12:00:00");
+    if (d.getFullYear() !== y || d.getMonth() !== m) continue;
+    itens.push({ desc: t.desc + (t.parc ? ` ${t.parc}` : ""), val: t.val, date: t.date, fixo: false });
+    total += t.val;
+  }
+  for (const f of fixos) {
+    if (f.active === false || f.type !== "fixo" || f.pay !== payKey) continue;
+    const lastDay = new Date(y, m + 1, 0).getDate();
+    const day = Math.min(f.day || 5, lastDay);
+    const date = `${y}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    itens.push({ desc: f.desc, val: f.val, date, fixo: true });
+    total += f.val;
+  }
+  itens.sort((a, b) => b.date.localeCompare(a.date));
+  return { total, itens };
+}
+
+export function faturaCartaoTotal(
+  cartaoNome: string,
+  txs: Transacao[],
+  fixos: FixoItem[]
+): number {
+  const payKey = "c:" + cartaoNome;
+  let total = 0;
+  for (const t of txs) {
+    if (t.pay === payKey && !isEntrada(t.type)) total += t.val;
+  }
+  // Fixos são recorrentes, não somam como "dívida total"; retorna apenas txs realizados
+  return total;
 }
 
 export function saveCats(cats: Categoria[]) { syncSave(KEYS.cats, cats); }
