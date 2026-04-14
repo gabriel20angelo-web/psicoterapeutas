@@ -1,15 +1,16 @@
 /**
  * Sync layer: localStorage ↔ Supabase kv_store
  *
- * - On init: pulls all keys from Supabase and updates localStorage (remote wins if newer)
- * - On save: writes localStorage immediately + pushes to Supabase in background
- * - Offline-safe: falls back to localStorage if Supabase is unreachable
+ * - On init: pulls the requested keys from Supabase and updates localStorage
+ *   (remote wins if newer). Tracking is per-key, so multiple modules can
+ *   initialize in parallel without stepping on each other.
+ * - On save: writes localStorage immediately + pushes to Supabase in background.
+ * - Offline-safe: falls back to localStorage if Supabase is unreachable.
  */
 
 import { supabase } from "./supabase";
 
 function getUserId(): string {
-  // Try to get from Supabase Auth session first
   try {
     const raw = localStorage.getItem("sb-qniyqmszqmqetimfrljf-auth-token");
     if (raw) {
@@ -21,15 +22,17 @@ function getUserId(): string {
 }
 const TS_PREFIX = "__sync_ts:";
 
-let _synced = false;
-let _syncing = false;
+const _syncedKeys = new Set<string>();
+const _inFlightKeys = new Map<string, Promise<void>>();
 let _useRemote = false;
+let _remoteProbed = false;
 
-/** Get the local timestamp for a key */
 function getLocalTs(key: string): number {
   try {
     return Number(localStorage.getItem(TS_PREFIX + key) || "0");
-  } catch { return 0; }
+  } catch {
+    return 0;
+  }
 }
 
 function setLocalTs(key: string) {
@@ -39,13 +42,42 @@ function setLocalTs(key: string) {
 }
 
 /**
- * Pull all kv_store entries from Supabase and update localStorage.
- * Should be called once on app startup.
+ * Pull the given keys from Supabase and update localStorage.
+ * Multiple concurrent calls with overlapping keys are de-duplicated per key.
  */
 export async function initSync(keys: string[]): Promise<void> {
-  if (_synced || _syncing) return;
-  _syncing = true;
+  if (typeof window === "undefined") return;
 
+  // Figure out which keys need a fresh sync and which are already in-flight
+  const pendingForMe: string[] = [];
+  const waits: Promise<void>[] = [];
+
+  for (const k of keys) {
+    if (_syncedKeys.has(k)) continue;
+    const existing = _inFlightKeys.get(k);
+    if (existing) {
+      waits.push(existing);
+      continue;
+    }
+    pendingForMe.push(k);
+  }
+
+  let selfPromise: Promise<void> | undefined;
+  if (pendingForMe.length > 0) {
+    selfPromise = doSync(pendingForMe).finally(() => {
+      for (const k of pendingForMe) {
+        _inFlightKeys.delete(k);
+        _syncedKeys.add(k);
+      }
+    });
+    for (const k of pendingForMe) _inFlightKeys.set(k, selfPromise);
+  }
+
+  if (selfPromise) waits.push(selfPromise);
+  if (waits.length > 0) await Promise.all(waits);
+}
+
+async function doSync(keys: string[]): Promise<void> {
   try {
     const { data, error } = await supabase
       .from("kv_store")
@@ -56,6 +88,7 @@ export async function initSync(keys: string[]): Promise<void> {
     if (error) throw error;
 
     _useRemote = true;
+    _remoteProbed = true;
 
     if (data && data.length > 0) {
       for (const row of data) {
@@ -63,11 +96,10 @@ export async function initSync(keys: string[]): Promise<void> {
         const localTs = getLocalTs(row.key);
 
         if (remoteTs >= localTs) {
-          // Remote is newer or equal — use remote
           localStorage.setItem(row.key, JSON.stringify(row.value));
           localStorage.setItem(TS_PREFIX + row.key, String(remoteTs));
         } else {
-          // Local is newer — push local to remote
+          // Local é mais novo — re-enviar pro remote
           try {
             const localData = localStorage.getItem(row.key);
             if (localData) {
@@ -76,53 +108,68 @@ export async function initSync(keys: string[]): Promise<void> {
                 key: row.key,
                 value: JSON.parse(localData),
                 updated_at: new Date(localTs).toISOString(),
-              }).then(() => {});
+              }).then(({ error: upErr }) => {
+                if (upErr && process.env.NODE_ENV === "development") {
+                  console.warn("[Sync] re-push failed for", row.key, upErr.message);
+                }
+              });
             }
           } catch {}
         }
       }
     }
 
-    // Push local-only keys that don't exist in remote
+    // Push local-only keys que o Supabase ainda não tem
     for (const key of keys) {
-      const exists = data?.some(r => r.key === key);
+      const exists = data?.some((r) => r.key === key);
       if (!exists) {
         try {
           const localData = localStorage.getItem(key);
           if (localData) {
             const parsed = JSON.parse(localData);
-            if (Array.isArray(parsed) ? parsed.length > 0 : Object.keys(parsed).length > 0) {
+            const nonEmpty = Array.isArray(parsed)
+              ? parsed.length > 0
+              : typeof parsed === "object" && parsed !== null
+                ? Object.keys(parsed).length > 0
+                : false;
+            if (nonEmpty) {
               supabase.from("kv_store").upsert({
                 user_id: getUserId(),
                 key,
                 value: parsed,
                 updated_at: new Date().toISOString(),
-              }).then(() => {});
+              }).then(({ error: upErr }) => {
+                if (upErr && process.env.NODE_ENV === "development") {
+                  console.warn("[Sync] initial push failed for", key, upErr.message);
+                }
+              });
             }
           }
         } catch {}
       }
     }
-  } catch {
-    _useRemote = false;
-    if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
-      console.warn("[Sync] Supabase unreachable, using localStorage only");
+  } catch (e) {
+    // Se é a primeira vez que probamos, marca remote indisponível
+    if (!_remoteProbed) {
+      _useRemote = false;
+      _remoteProbed = true;
+      if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+        console.warn("[Sync] Supabase unreachable, using localStorage only");
+      }
     }
   }
-
-  _synced = true;
-  _syncing = false;
 }
 
 /**
  * Save data to localStorage + Supabase (background).
  */
 export function syncSave<T>(key: string, data: T): void {
-  // Always save to localStorage first (instant)
-  localStorage.setItem(key, JSON.stringify(data));
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch {}
   setLocalTs(key);
 
-  // Push to Supabase in background
   if (_useRemote) {
     supabase.from("kv_store").upsert({
       user_id: getUserId(),
@@ -138,15 +185,22 @@ export function syncSave<T>(key: string, data: T): void {
 }
 
 /**
- * Load data from localStorage (already synced on init).
+ * Load data from localStorage (já sincronizado no init).
  */
 export function syncLoad<T>(key: string, seed: T): T {
   if (typeof window === "undefined") return seed;
   try {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : seed;
-  } catch { return seed; }
+  } catch {
+    return seed;
+  }
 }
 
-export function isSynced(): boolean { return _synced; }
-export function isRemoteAvailable(): boolean { return _useRemote; }
+export function isKeySynced(key: string): boolean {
+  return _syncedKeys.has(key);
+}
+
+export function isRemoteAvailable(): boolean {
+  return _useRemote;
+}

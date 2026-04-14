@@ -29,7 +29,28 @@ const LS = {
   atividades: 'allos-atividades',
   templates: 'allos-templates',
   notificacoes: 'allos-notificacoes',
+  tombstonesPacientes: 'allos-deleted-pacientes',
+  tombstonesAtividades: 'allos-deleted-atividades',
 } as const;
+
+// ─── TOMBSTONES (soft-delete tracking) ───
+// Guarda IDs deletados localmente pra garantir que não voltem do Supabase
+// mesmo se o delete remoto falhar silenciosamente.
+function loadTombstones(key: string): string[] {
+  if (typeof window === 'undefined') return [];
+  try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : []; } catch { return []; }
+}
+function addTombstone(key: string, id: string) {
+  const list = loadTombstones(key);
+  if (!list.includes(id)) {
+    list.push(id);
+    saveLocal(key, list);
+  }
+}
+function removeTombstone(key: string, id: string) {
+  const list = loadTombstones(key).filter(x => x !== id);
+  saveLocal(key, list);
+}
 
 // ─── IN-MEMORY CACHE ───
 let pacientes: Paciente[] = [];
@@ -90,11 +111,37 @@ export async function initializeData(userId: string): Promise<void> {
       templates = tRes.data || [];
       notificacoes = nRes.data || [];
 
-      // Merge de edições locais não sincronizadas: se a versão local for mais
-      // recente (updated_at maior), prevalece e é re-enviada ao Supabase. Isso
-      // protege contra escritas remotas que falharam silenciosamente.
+      // ─── TOMBSTONES: remove registros deletados localmente que voltaram do Supabase
+      const tPacientes = loadTombstones(LS.tombstonesPacientes);
+      const tAtividades = loadTombstones(LS.tombstonesAtividades);
+      if (tPacientes.length > 0) {
+        pacientes = pacientes.filter(p => !tPacientes.includes(p.id));
+        // Re-tenta o delete remoto; se suceder, remove do tombstone list
+        for (const id of tPacientes) {
+          supabase.from('pacientes').delete().eq('id', id).then(({ error }) => {
+            if (!error) removeTombstone(LS.tombstonesPacientes, id);
+            else if (process.env.NODE_ENV === 'development') {
+              console.warn('[Data] retry delete paciente falhou:', id, error.message);
+            }
+          });
+        }
+      }
+      if (tAtividades.length > 0) {
+        atividades = atividades.filter(a => !tAtividades.includes(a.id));
+        for (const id of tAtividades) {
+          supabase.from('atividades').delete().eq('id', id).then(({ error }) => {
+            if (!error) removeTombstone(LS.tombstonesAtividades, id);
+            else if (process.env.NODE_ENV === 'development') {
+              console.warn('[Data] retry delete atividade falhou:', id, error.message);
+            }
+          });
+        }
+      }
+
+      // ─── MERGE PACIENTES: versão local mais recente vence
       const localPacientes = loadLocal<Paciente>(LS.pacientes);
       for (const local of localPacientes) {
+        if (tPacientes.includes(local.id)) continue;
         const remoteIdx = pacientes.findIndex(p => p.id === local.id);
         if (remoteIdx === -1) continue;
         const remote = pacientes[remoteIdx];
@@ -111,29 +158,65 @@ export async function initializeData(userId: string): Promise<void> {
         }
       }
 
+      // ─── MERGE ATIVIDADES: versão local mais recente vence + insert locais novas
       const localAtividades = loadLocal<Atividade>(LS.atividades);
-      if (localAtividades.length > 0) {
-        const supabaseIds = new Set(atividades.map(a => a.id));
-        const oneDayAgo = Date.now() - 86400000;
-        const localOnly = localAtividades.filter(a => {
-          if (supabaseIds.has(a.id)) return false;
-          if (!a.id.startsWith('a-')) return false;
-          const timestamp = parseInt(a.id.split('-')[1] || '0', 10);
-          if (timestamp < oneDayAgo) return false;
-          return true;
-        });
-        if (localOnly.length > 0) {
-          atividades.push(...localOnly);
-          for (const a of localOnly) {
-            const { id: _id, paciente: _p, ...insertData } = a as Atividade & { paciente?: any };
-            supabase.from('atividades').insert(insertData).select().single().then(({ data: row }) => {
-              if (row) {
-                const idx = atividades.findIndex(x => x.id === a.id);
-                if (idx !== -1) atividades[idx] = { ...row, paciente: atividades[idx].paciente };
-                saveLocal(LS.atividades, atividades);
+      const supabaseIds = new Set(atividades.map(a => a.id));
+      for (const local of localAtividades) {
+        if (tAtividades.includes(local.id)) continue;
+        if (supabaseIds.has(local.id)) {
+          // Já existe no remote — compara timestamps
+          const remoteIdx = atividades.findIndex(a => a.id === local.id);
+          if (remoteIdx === -1) continue;
+          const remote = atividades[remoteIdx];
+          const localTs = new Date(local.updated_at || 0).getTime();
+          const remoteTs = new Date(remote.updated_at || 0).getTime();
+          if (localTs > remoteTs) {
+            atividades[remoteIdx] = local;
+            const { id: _id, paciente: _p, ...updateData } = local as Atividade & { paciente?: any };
+            supabase.from('atividades').update(updateData).eq('id', local.id).then(({ error }) => {
+              if (error && process.env.NODE_ENV === 'development') {
+                console.warn('[Data] re-push atividade falhou:', error.message);
               }
             });
           }
+        } else if (local.id.startsWith('a-')) {
+          // Atividade criada localmente que nunca foi pro Supabase — reenviar
+          const oneWeekAgo = Date.now() - 7 * 86400000;
+          const timestamp = parseInt(local.id.split('-')[1] || '0', 10);
+          if (timestamp >= oneWeekAgo) {
+            atividades.push(local);
+            const { id: _id, paciente: _p, ...insertData } = local as Atividade & { paciente?: any };
+            supabase.from('atividades').insert(insertData).select().single().then(({ data: row, error }) => {
+              if (row) {
+                const idx = atividades.findIndex(x => x.id === local.id);
+                if (idx !== -1) atividades[idx] = { ...row, paciente: atividades[idx].paciente };
+                saveLocal(LS.atividades, atividades);
+                notifyChange();
+              }
+              if (error && process.env.NODE_ENV === 'development') {
+                console.warn('[Data] re-insert atividade falhou:', error.message);
+              }
+            });
+          }
+        }
+      }
+
+      // ─── MERGE TEMPLATES: versão local mais recente vence
+      const localTemplates = loadLocal<TemplateMensagem>(LS.templates);
+      for (const local of localTemplates) {
+        const remoteIdx = templates.findIndex(t => t.id === local.id);
+        if (remoteIdx === -1) continue;
+        const remote = templates[remoteIdx];
+        const localTs = new Date(local.updated_at || 0).getTime();
+        const remoteTs = new Date(remote.updated_at || 0).getTime();
+        if (localTs > remoteTs) {
+          templates[remoteIdx] = local;
+          const { id: _id, ...updateData } = local;
+          supabase.from('templates_mensagem').update(updateData).eq('id', local.id).then(({ error }) => {
+            if (error && process.env.NODE_ENV === 'development') {
+              console.warn('[Data] re-push template falhou:', error.message);
+            }
+          });
         }
       }
 
@@ -263,7 +346,9 @@ export function createPaciente(data: Omit<Paciente, 'id' | 'created_at' | 'updat
           notifyChange();
         }
       }
-      if (error) console.error("[Data] createPaciente insert failed:", error.message);
+      if (error && process.env.NODE_ENV === 'development') {
+        console.error("[Data] createPaciente insert failed:", error.message);
+      }
     });
   }
 
@@ -294,22 +379,38 @@ export function updatePaciente(id: string, data: Partial<Paciente>): Paciente | 
 
 export function deletePaciente(id: string): boolean {
   const len = pacientes.length;
+  const removidasAtividadesIds = atividades.filter(a => a.paciente_id === id).map(a => a.id);
   pacientes = pacientes.filter(p => p.id !== id);
   const deleted = pacientes.length < len;
   if (deleted) {
-    const sessionsBefore = atividades.length;
+    // Tombstones: garante que o registro não volte do Supabase na próxima init
+    addTombstone(LS.tombstonesPacientes, id);
+    for (const aid of removidasAtividadesIds) {
+      addTombstone(LS.tombstonesAtividades, aid);
+    }
     atividades = atividades.filter(a => a.paciente_id !== id);
     saveLocal(LS.pacientes, pacientes);
+    saveLocal(LS.atividades, atividades);
     try {
       localStorage.removeItem(`allos-notes-${id}`);
       localStorage.removeItem(`allos-prenotes-${id}`);
       localStorage.removeItem(`allos-general-note-${id}`);
     } catch {}
-    if (atividades.length < sessionsBefore) saveLocal(LS.atividades, atividades);
     notifyChange();
     if (_useSupabase) {
-      supabase.from('atividades').delete().eq('paciente_id', id);
-      supabase.from('pacientes').delete().eq('id', id);
+      supabase.from('atividades').delete().eq('paciente_id', id).then(({ error }) => {
+        if (!error) {
+          for (const aid of removidasAtividadesIds) removeTombstone(LS.tombstonesAtividades, aid);
+        } else if (process.env.NODE_ENV === 'development') {
+          console.warn('[Data] delete atividades do paciente falhou:', error.message);
+        }
+      });
+      supabase.from('pacientes').delete().eq('id', id).then(({ error }) => {
+        if (!error) removeTombstone(LS.tombstonesPacientes, id);
+        else if (process.env.NODE_ENV === 'development') {
+          console.warn('[Data] delete paciente falhou:', error.message);
+        }
+      });
     }
   }
   return deleted;
@@ -382,13 +483,21 @@ export function createAtividade(data: Omit<Atividade, 'id' | 'created_at' | 'upd
 export function updateAtividade(id: string, data: Partial<Atividade>): Atividade | undefined {
   const idx = atividades.findIndex(a => a.id === id);
   if (idx === -1) return undefined;
-  const { paciente: _p, ...cleanData } = data as Partial<Atividade> & { paciente?: any };
-  atividades[idx] = { ...atividades[idx], ...data, updated_at: new Date().toISOString() };
+  // Remove campos relacionais (paciente) e chaves undefined antes de enviar
+  const { paciente: _p, ...rest } = data as Partial<Atividade> & { paciente?: any };
+  const clean: Partial<Atividade> = {};
+  for (const k of Object.keys(rest) as (keyof Atividade)[]) {
+    if ((rest as any)[k] !== undefined) (clean as any)[k] = (rest as any)[k];
+  }
+  const updated_at = new Date().toISOString();
+  atividades[idx] = { ...atividades[idx], ...clean, updated_at };
   saveLocal(LS.atividades, atividades);
   notifyChange();
   if (_useSupabase) {
-    supabase.from('atividades').update(cleanData).eq('id', id).then(({ error }) => {
-      if (error) console.error("[Data] updateAtividade failed:", error.message, "id:", id);
+    supabase.from('atividades').update({ ...clean, updated_at }).eq('id', id).then(({ error }) => {
+      if (error && process.env.NODE_ENV === 'development') {
+        console.error("[Data] updateAtividade failed:", error.message, "id:", id);
+      }
     });
   }
   return atividades[idx];
@@ -399,9 +508,17 @@ export function deleteAtividade(id: string): boolean {
   atividades = atividades.filter(a => a.id !== id);
   const deleted = atividades.length < len;
   if (deleted) {
+    addTombstone(LS.tombstonesAtividades, id);
     saveLocal(LS.atividades, atividades);
     notifyChange();
-    if (_useSupabase) supabase.from('atividades').delete().eq('id', id);
+    if (_useSupabase) {
+      supabase.from('atividades').delete().eq('id', id).then(({ error }) => {
+        if (!error) removeTombstone(LS.tombstonesAtividades, id);
+        else if (process.env.NODE_ENV === 'development') {
+          console.warn('[Data] delete atividade falhou:', error.message);
+        }
+      });
+    }
   }
   return deleted;
 }
@@ -422,14 +539,28 @@ export function markAsRead(id: string): void {
   const n = notificacoes.find(x => x.id === id);
   if (n) {
     n.lida = true;
-    supabase.from('notificacoes').update({ lida: true }).eq('id', id);
+    saveLocal(LS.notificacoes, notificacoes);
+    notifyChange();
+    if (_useSupabase) {
+      supabase.from('notificacoes').update({ lida: true }).eq('id', id).then(({ error }) => {
+        if (error && process.env.NODE_ENV === 'development') {
+          console.warn('[Data] markAsRead falhou:', error.message);
+        }
+      });
+    }
   }
 }
 
 export function markAllAsRead(): void {
   notificacoes.forEach(n => { n.lida = true; });
-  if (_currentUserId) {
-    supabase.from('notificacoes').update({ lida: true }).eq('terapeuta_id', _currentUserId).eq('lida', false);
+  saveLocal(LS.notificacoes, notificacoes);
+  notifyChange();
+  if (_useSupabase && _currentUserId) {
+    supabase.from('notificacoes').update({ lida: true }).eq('terapeuta_id', _currentUserId).eq('lida', false).then(({ error }) => {
+      if (error && process.env.NODE_ENV === 'development') {
+        console.warn('[Data] markAllAsRead falhou:', error.message);
+      }
+    });
   }
 }
 
@@ -441,8 +572,17 @@ export function getTemplates(): TemplateMensagem[] {
 export function updateTemplate(id: string, conteudo: string): TemplateMensagem | undefined {
   const idx = templates.findIndex(t => t.id === id);
   if (idx === -1) return undefined;
-  templates[idx] = { ...templates[idx], conteudo, updated_at: new Date().toISOString() };
-  supabase.from('templates_mensagem').update({ conteudo }).eq('id', id);
+  const updated_at = new Date().toISOString();
+  templates[idx] = { ...templates[idx], conteudo, updated_at };
+  saveLocal(LS.templates, templates);
+  notifyChange();
+  if (_useSupabase) {
+    supabase.from('templates_mensagem').update({ conteudo, updated_at }).eq('id', id).then(({ error }) => {
+      if (error && process.env.NODE_ENV === 'development') {
+        console.warn('[Data] updateTemplate falhou:', error.message);
+      }
+    });
+  }
   return templates[idx];
 }
 
