@@ -8,20 +8,24 @@ import {
 import Shell from "@/components/Shell";
 import EmptyState from "@/components/ui/EmptyState";
 import PendenciasTab from "@/components/financas/PendenciasTab";
+import MetasTab from "@/components/financas/MetasTab";
 import {
   getFinancas, saveCats, saveTxs, saveFixos, savePendencias, saveEmprestimos, saveOrcamentos,
+  saveCaixinhas, saveMetas,
   MESES, fmtBRL, fmtDiaMes, labelPay, isEntrada, lancamentosDoMes, nextId,
   resumoPendencias, pendenciaToTx, hojeISO, pagamentoEmprestimoToTx, gastosPorCategoriaMes,
+  resumoMensal, totalReservado,
   type FinancasData, type Transacao, type FixoItem, type Categoria, type TxType, type Pendencia,
-  type Emprestimo, type PagamentoEmprestimo, type Orcamento,
+  type Emprestimo, type PagamentoEmprestimo, type Orcamento, type Caixinha, type MetasFinanceiras,
 } from "@/lib/financas-data";
 
-type TabId = "lancamentos" | "fixos" | "pendencias" | "categorias" | "graficos" | "projecao";
+type TabId = "lancamentos" | "fixos" | "pendencias" | "metas" | "categorias" | "graficos" | "projecao";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "lancamentos", label: "Lançamentos" },
   { id: "fixos", label: "Fixos" },
   { id: "pendencias", label: "Pendências" },
+  { id: "metas", label: "Metas & Caixinhas" },
   { id: "categorias", label: "Categorias" },
   { id: "graficos", label: "Gráficos" },
   { id: "projecao", label: "Projeção" },
@@ -50,7 +54,10 @@ export default function FinancasPage() {
 }
 
 function FinancasInner() {
-  const [data, setData] = useState<FinancasData>({ cats: [], txs: [], fixos: [], pendencias: [], emprestimos: [], orcamentos: [] });
+  const [data, setData] = useState<FinancasData>({
+    cats: [], txs: [], fixos: [], pendencias: [], emprestimos: [], orcamentos: [],
+    caixinhas: [], metas: {},
+  });
   const [tab, setTab] = useState<TabId>("lancamentos");
   const [mY, setMY] = useState(() => new Date().getFullYear());
   const [mM, setMM] = useState(() => new Date().getMonth());
@@ -74,6 +81,8 @@ function FinancasInner() {
       if (next.pendencias) savePendencias(next.pendencias);
       if (next.emprestimos) saveEmprestimos(next.emprestimos);
       if (next.orcamentos) saveOrcamentos(next.orcamentos);
+      if (next.caixinhas) saveCaixinhas(next.caixinhas);
+      if (next.metas) saveMetas(next.metas);
       return merged;
     });
   }
@@ -124,6 +133,8 @@ function FinancasInner() {
           if (!d.pendencias) d.pendencias = [];
           if (!d.emprestimos) d.emprestimos = [];
           if (!d.orcamentos) d.orcamentos = [];
+          if (!d.caixinhas) d.caixinhas = [];
+          if (!d.metas) d.metas = {};
           commit(d);
           alert("Importado com sucesso.");
         } else alert("Arquivo inválido.");
@@ -240,6 +251,18 @@ function FinancasInner() {
     [data, mY, mM]
   );
 
+  // ─── Metas & Caixinhas ───
+
+  function saveCaixinhasList(caixinhas: Caixinha[]) {
+    commit({ caixinhas });
+  }
+  function saveMetasObj(metas: MetasFinanceiras) {
+    commit({ metas });
+  }
+
+  const patrimonio = useMemo(() => totalReservado(data.caixinhas), [data.caixinhas]);
+  const resumo = useMemo(() => resumoMensal(data, mY, mM), [data, mY, mM]);
+
   // ─── Categorias ───
   function addCat(n: string, c: string) {
     if (!n.trim()) return;
@@ -306,7 +329,21 @@ function FinancasInner() {
           sub={`${txs.filter((t) => isEntrada(t.type)).length} lançamentos`} />
         <SummaryCard label="Gastos" value={"R$ " + fmtBRL(sum.gastos)} tone="neg"
           sub={`${txs.filter((t) => !isEntrada(t.type)).length} lançamentos`} />
-        <SummaryCard label="Fixos / Variáveis" value={`R$ ${fmtBRL(sum.fixo)} / R$ ${fmtBRL(sum.variavel)}`} tone="neutral" sub="No mês" />
+        {resumo.disponivel > 0 || resumo.meta_economia > 0 ? (
+          <SummaryCard
+            label="Disponível este mês"
+            value={"R$ " + fmtBRL(resumo.disponivel)}
+            tone={resumo.disponivel > 0 ? "pos" : "neg"}
+            sub={resumo.dias_restantes > 0 ? `R$ ${fmtBRL(resumo.por_dia_restante)}/dia · ${resumo.dias_restantes}d` : "Projetado"}
+          />
+        ) : (
+          <SummaryCard
+            label="Fixos / Variáveis"
+            value={`R$ ${fmtBRL(sum.fixo)} / R$ ${fmtBRL(sum.variavel)}`}
+            tone="neutral"
+            sub={patrimonio > 0 ? `Reservado: R$ ${fmtBRL(patrimonio)}` : "No mês"}
+          />
+        )}
       </div>
 
       {/* Action buttons */}
@@ -404,6 +441,18 @@ function FinancasInner() {
           onSubmit={submitFixo}
           onToggle={toggleFixo}
           onDelete={deleteFixo}
+        />
+      )}
+
+      {tab === "metas" && (
+        <MetasTab
+          caixinhas={data.caixinhas}
+          metas={data.metas}
+          resumo={resumo}
+          patrimonio={patrimonio}
+          mesLabel={`${MESES[mM]} ${mY}`}
+          onSaveCaixinhas={saveCaixinhasList}
+          onSaveMetas={saveMetasObj}
         />
       )}
 

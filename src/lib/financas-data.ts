@@ -85,6 +85,35 @@ export interface Orcamento {
   limite: number;
 }
 
+export type MovimentoTipo = "deposito" | "saque";
+
+export interface MovimentoCaixinha {
+  id: number;
+  tipo: MovimentoTipo;
+  valor: number;
+  data: string;
+  notas?: string;
+}
+
+export interface Caixinha {
+  id: number;
+  nome: string;
+  cor: string;
+  icone?: string;
+  meta?: number;
+  meta_data?: string;
+  movimentos: MovimentoCaixinha[];
+  criada_em: string;
+  notas?: string;
+  arquivada?: boolean;
+}
+
+export interface MetasFinanceiras {
+  economia_mensal?: number;
+  gasto_maximo_mensal?: number;
+  patrimonio_alvo?: number;
+}
+
 export interface FinancasData {
   cats: Categoria[];
   txs: Transacao[];
@@ -92,6 +121,8 @@ export interface FinancasData {
   pendencias: Pendencia[];
   emprestimos: Emprestimo[];
   orcamentos: Orcamento[];
+  caixinhas: Caixinha[];
+  metas: MetasFinanceiras;
 }
 
 const KEYS = {
@@ -101,6 +132,8 @@ const KEYS = {
   pendencias: "fin:pendencias",
   emprestimos: "fin:emprestimos",
   orcamentos: "fin:orcamentos",
+  caixinhas: "fin:caixinhas",
+  metas: "fin:metas",
 };
 
 const CATS_SEED: Categoria[] = [
@@ -127,6 +160,8 @@ export function getFinancas(): FinancasData {
     pendencias: syncLoad<Pendencia[]>(KEYS.pendencias, []),
     emprestimos: syncLoad<Emprestimo[]>(KEYS.emprestimos, []),
     orcamentos: syncLoad<Orcamento[]>(KEYS.orcamentos, []),
+    caixinhas: syncLoad<Caixinha[]>(KEYS.caixinhas, []),
+    metas: syncLoad<MetasFinanceiras>(KEYS.metas, {}),
   };
 }
 
@@ -136,6 +171,122 @@ export function saveFixos(fixos: FixoItem[]) { syncSave(KEYS.fixos, fixos); }
 export function savePendencias(p: Pendencia[]) { syncSave(KEYS.pendencias, p); }
 export function saveEmprestimos(e: Emprestimo[]) { syncSave(KEYS.emprestimos, e); }
 export function saveOrcamentos(o: Orcamento[]) { syncSave(KEYS.orcamentos, o); }
+export function saveCaixinhas(c: Caixinha[]) { syncSave(KEYS.caixinhas, c); }
+export function saveMetas(m: MetasFinanceiras) { syncSave(KEYS.metas, m); }
+
+// ─── Caixinhas helpers ───
+
+export function saldoCaixinha(c: Caixinha): number {
+  return c.movimentos.reduce((a, m) => a + (m.tipo === "deposito" ? m.valor : -m.valor), 0);
+}
+
+export function totalReservado(caixinhas: Caixinha[]): number {
+  return caixinhas
+    .filter((c) => !c.arquivada)
+    .reduce((a, c) => a + saldoCaixinha(c), 0);
+}
+
+export function progressoCaixinha(c: Caixinha): number {
+  if (!c.meta || c.meta <= 0) return 0;
+  return Math.min(100, (saldoCaixinha(c) / c.meta) * 100);
+}
+
+// ─── Disponível e metas mensais ───
+
+export interface ResumoMensal {
+  entradas_realizadas: number;
+  entradas_previstas: number;
+  entradas_total: number;
+  gastos_realizados: number;
+  gastos_previstos: number;
+  gastos_total: number;
+  saldo_realizado: number;
+  saldo_projetado: number;
+  disponivel: number;
+  dias_restantes: number;
+  por_dia_restante: number;
+  meta_economia: number;
+  economia_atual: number;
+  meta_gasto_max: number;
+  taxa_poupanca: number;
+}
+
+export function diasRestantesDoMes(y: number, m: number): number {
+  const hoje = new Date();
+  if (hoje.getFullYear() !== y || hoje.getMonth() !== m) {
+    const dd = new Date(y, m + 1, 0);
+    return dd.getDate();
+  }
+  const fim = new Date(y, m + 1, 0);
+  const diff = fim.getDate() - hoje.getDate() + 1;
+  return Math.max(1, diff);
+}
+
+export function resumoMensal(
+  data: FinancasData, y: number, m: number
+): ResumoMensal {
+  // Entradas e gastos realizados (txs)
+  const noMes = (date: string) => {
+    const d = new Date(date + "T12:00:00");
+    return d.getFullYear() === y && d.getMonth() === m;
+  };
+  let e_real = 0, g_real = 0;
+  for (const t of data.txs) {
+    if (!noMes(t.date)) continue;
+    if (isEntrada(t.type)) e_real += t.val;
+    else g_real += t.val;
+  }
+  // Fixos ativos do mês
+  for (const f of data.fixos) {
+    if (f.active === false) continue;
+    if (f.type === "entrada_fixa") e_real += f.val;
+    else g_real += f.val;
+  }
+
+  // Pendências abertas do mês
+  let e_prev = 0, g_prev = 0;
+  for (const p of data.pendencias) {
+    if (p.status !== "aberto") continue;
+    if (!noMes(p.date_due)) continue;
+    if (p.kind === "receber") e_prev += p.val;
+    else g_prev += p.val;
+  }
+
+  const entradas_total = e_real + e_prev;
+  const gastos_total = g_real + g_prev;
+  const saldo_realizado = e_real - g_real;
+  const saldo_projetado = entradas_total - gastos_total;
+
+  const meta_economia = data.metas.economia_mensal || 0;
+  const meta_gasto_max = data.metas.gasto_maximo_mensal || 0;
+
+  const disponivel = Math.max(0, saldo_projetado - meta_economia);
+  const dias = diasRestantesDoMes(y, m);
+  const por_dia = dias > 0 ? disponivel / dias : 0;
+
+  // Economia real do mês = entradas realizadas - gastos realizados (se positivo)
+  const economia_atual = Math.max(0, saldo_realizado);
+
+  const taxa = entradas_total > 0 ? (Math.max(0, saldo_projetado) / entradas_total) * 100 : 0;
+
+  return {
+    entradas_realizadas: e_real,
+    entradas_previstas: e_prev,
+    entradas_total,
+    gastos_realizados: g_real,
+    gastos_previstos: g_prev,
+    gastos_total,
+    saldo_realizado,
+    saldo_projetado,
+    disponivel,
+    dias_restantes: dias,
+    por_dia_restante: por_dia,
+    meta_economia,
+    economia_atual,
+    meta_gasto_max,
+    taxa_poupanca: taxa,
+  };
+}
 
 // ─── Empréstimo helpers ───
 
