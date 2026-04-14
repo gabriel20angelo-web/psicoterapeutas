@@ -15,10 +15,10 @@ import {
   saveCaixinhas, saveMetas, saveCartoes,
   MESES, fmtBRL, fmtDiaMes, labelPay, isEntrada, lancamentosDoMes, nextId,
   resumoPendencias, pendenciaToTx, hojeISO, pagamentoEmprestimoToTx, gastosPorCategoriaMes,
-  resumoMensal, totalReservado,
+  resumoMensal, totalReservado, saldoReal, saldoLivre, fixoMesKey,
   type FinancasData, type Transacao, type FixoItem, type Categoria, type TxType, type Pendencia,
   type Emprestimo, type PagamentoEmprestimo, type Orcamento, type Caixinha, type MetasFinanceiras,
-  type Cartao,
+  type Cartao, type MovimentoCaixinha,
 } from "@/lib/financas-data";
 
 type TabId = "lancamentos" | "fixos" | "pendencias" | "metas" | "cartoes" | "categorias" | "graficos" | "projecao";
@@ -215,7 +215,26 @@ function FinancasInner() {
     const newPendencias = data.pendencias.map((x) =>
       x.id === id ? { ...x, status: "quitado" as const, quitado_em: payDate, tx_id: tx.id } : x
     );
-    commit({ txs: [...data.txs, tx], pendencias: newPendencias });
+
+    // Se pendência estava vinculada a uma caixinha, criar movimento compatível
+    let newCaixinhas = data.caixinhas;
+    if (p.caixinha_id) {
+      const tipo: MovimentoCaixinha["tipo"] = p.kind === "receber" ? "deposito" : "saque";
+      const mov: MovimentoCaixinha = {
+        id: nextId(),
+        tipo,
+        valor: p.val,
+        data: payDate,
+        notas: p.kind === "receber"
+          ? `Recebido: ${p.desc}`
+          : `Pago: ${p.desc}`,
+      };
+      newCaixinhas = data.caixinhas.map((c) => c.id === p.caixinha_id
+        ? { ...c, movimentos: [...c.movimentos, mov] }
+        : c);
+    }
+
+    commit({ txs: [...data.txs, tx], pendencias: newPendencias, caixinhas: newCaixinhas });
   }
 
   const resumoPend = useMemo(() => resumoPendencias(data.pendencias), [data.pendencias]);
@@ -267,6 +286,61 @@ function FinancasInner() {
 
   const patrimonio = useMemo(() => totalReservado(data.caixinhas), [data.caixinhas]);
   const resumo = useMemo(() => resumoMensal(data, mY, mM), [data, mY, mM]);
+  const saldoRealVal = useMemo(() => saldoReal(data), [data]);
+  const saldoLivreVal = useMemo(() => saldoLivre(data), [data]);
+
+  // Realizar fixo: cria tx real + marca fixo como realizado + opcional saque caixinha
+  function realizarFixo(fixoId: number, payDate: string, caixinhaId?: number) {
+    const f = data.fixos.find((x) => x.id === fixoId);
+    if (!f) return;
+    const key = fixoMesKey(
+      parseInt(payDate.slice(0, 4)),
+      parseInt(payDate.slice(5, 7)) - 1
+    );
+    const tx: Transacao = {
+      id: nextId(),
+      desc: f.desc,
+      val: f.val,
+      date: payDate,
+      type: f.type === "entrada_fixa" ? "entrada" : "variavel",
+      cat: f.cat,
+      pay: f.pay,
+      parc: null,
+      pg: null,
+    };
+    const newFixos = data.fixos.map((x) => x.id === fixoId
+      ? { ...x, realizacoes: { ...(x.realizacoes || {}), [key]: tx.id } }
+      : x);
+
+    let newCaixinhas = data.caixinhas;
+    if (caixinhaId && f.type === "fixo") {
+      const mov: MovimentoCaixinha = {
+        id: nextId(),
+        tipo: "saque",
+        valor: f.val,
+        data: payDate,
+        notas: `Pagamento de fixo: ${f.desc}`,
+      };
+      newCaixinhas = data.caixinhas.map((c) => c.id === caixinhaId
+        ? { ...c, movimentos: [...c.movimentos, mov] }
+        : c);
+    }
+
+    commit({ txs: [...data.txs, tx], fixos: newFixos, caixinhas: newCaixinhas });
+  }
+
+  // Desfazer realização (se errar)
+  function desrealizarFixo(fixoId: number, mesKey: string) {
+    const f = data.fixos.find((x) => x.id === fixoId);
+    if (!f || !f.realizacoes?.[mesKey]) return;
+    const txId = f.realizacoes[mesKey];
+    const novasRealiz = { ...f.realizacoes };
+    delete novasRealiz[mesKey];
+    commit({
+      txs: data.txs.filter((t) => t.id !== txId),
+      fixos: data.fixos.map((x) => x.id === fixoId ? { ...x, realizacoes: novasRealiz } : x),
+    });
+  }
 
   function saveCartoesList(cartoes: Cartao[]) {
     commit({ cartoes });
@@ -394,6 +468,50 @@ function FinancasInner() {
         </button>
       </div>
 
+      {/* Banner de saldos reais (global, não mensal) */}
+      <div className="rounded-xl p-4 mb-4 grid grid-cols-3 gap-4"
+        style={{
+          background: "var(--bg-card)",
+          border: "1px solid var(--border-default)",
+        }}>
+        <div>
+          <p className="font-dm text-[9px] uppercase tracking-wider font-semibold mb-1"
+            style={{ color: "var(--text-tertiary)" }}>
+            Saldo real na conta
+          </p>
+          <p className="font-fraunces text-xl" style={{ color: saldoRealVal >= 0 ? "var(--text-primary)" : "#ef4444" }}>
+            R$ {fmtBRL(Math.abs(saldoRealVal))}
+          </p>
+          <p className="font-dm text-[9px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+            Lançado até hoje
+          </p>
+        </div>
+        <div style={{ borderLeft: "1px solid var(--border-subtle)", paddingLeft: 16 }}>
+          <p className="font-dm text-[9px] uppercase tracking-wider font-semibold mb-1"
+            style={{ color: "var(--text-tertiary)" }}>
+            Livre
+          </p>
+          <p className="font-fraunces text-xl" style={{ color: saldoLivreVal >= 0 ? "#10b981" : "#ef4444" }}>
+            R$ {fmtBRL(Math.abs(saldoLivreVal))}
+          </p>
+          <p className="font-dm text-[9px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+            Fora das caixinhas
+          </p>
+        </div>
+        <div style={{ borderLeft: "1px solid var(--border-subtle)", paddingLeft: 16 }}>
+          <p className="font-dm text-[9px] uppercase tracking-wider font-semibold mb-1"
+            style={{ color: "var(--text-tertiary)" }}>
+            Reservado
+          </p>
+          <p className="font-fraunces text-xl" style={{ color: "var(--orange-500)" }}>
+            R$ {fmtBRL(patrimonio)}
+          </p>
+          <p className="font-dm text-[9px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+            Em {data.caixinhas.filter((c) => !c.arquivada).length} caixinhas
+          </p>
+        </div>
+      </div>
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <SummaryCard label="Saldo" value={(sum.saldo >= 0 ? "+ " : "− ") + "R$ " + fmtBRL(Math.abs(sum.saldo))}
@@ -500,6 +618,7 @@ function FinancasInner() {
           cats={data.cats}
           onEdit={(t) => setModal({ mode: isEntrada(t.type) ? "entrada" : "gasto", editId: t.id })}
           onDelete={deleteTx}
+          onRealizarFixo={(fixoId) => realizarFixo(fixoId, hojeISO())}
         />
       )}
 
@@ -538,6 +657,9 @@ function FinancasInner() {
           resumo={resumo}
           patrimonio={patrimonio}
           mesLabel={`${MESES[mM]} ${mY}`}
+          mY={mY}
+          mM={mM}
+          cats={data.cats}
           onSaveCaixinhas={saveCaixinhasList}
           onSaveMetas={saveMetasObj}
         />
@@ -548,6 +670,7 @@ function FinancasInner() {
           pendencias={data.pendencias}
           emprestimos={data.emprestimos}
           cats={data.cats}
+          caixinhas={data.caixinhas}
           cartoes={cartoesConhecidos}
           onSave={savePendenciasList}
           onSaveEmprestimos={saveEmprestimosList}
@@ -637,12 +760,13 @@ function SummaryCard({
 // ─── Lançamentos Tab ───────────────────────────────
 
 function LancamentosTab({
-  txs, cats, onEdit, onDelete,
+  txs, cats, onEdit, onDelete, onRealizarFixo,
 }: {
   txs: (Transacao & { _fixo?: boolean })[];
   cats: Categoria[];
   onEdit: (t: Transacao) => void;
   onDelete: (id: number) => void;
+  onRealizarFixo: (fixoId: number) => void;
 }) {
   if (!txs.length) {
     return (
@@ -687,9 +811,10 @@ function LancamentosTab({
                   <Td>
                     <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{t.desc}</span>
                     {t._fixo && (
-                      <span className="ml-2 font-dm text-[9px] font-bold inline-flex items-center gap-0.5"
-                        style={{ color: "#a78bfa" }}>
-                        <Repeat size={9} /> FIXO
+                      <span className="ml-2 font-dm text-[9px] font-bold inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded"
+                        style={{ color: "#a78bfa", background: "rgba(167,139,250,.1)" }}
+                        title="Fixo projetado — ainda não saiu da conta">
+                        <Repeat size={9} /> PROJETADO
                       </span>
                     )}
                   </Td>
@@ -726,9 +851,18 @@ function LancamentosTab({
                   </Td>
                   <Td>
                     {t._fixo ? (
-                      <span className="font-dm text-[9px] italic" style={{ color: "var(--text-tertiary)" }}>
-                        aba Fixos
-                      </span>
+                      <button
+                        onClick={() => onRealizarFixo(-t.id)}
+                        className="px-2 py-1 rounded font-dm text-[10px] font-semibold inline-flex items-center gap-1 whitespace-nowrap"
+                        style={{
+                          background: "rgba(16,185,129,.12)",
+                          color: "#10b981",
+                          border: "1px solid rgba(16,185,129,.25)",
+                        }}
+                        title="Marcar como pago — cria um lançamento real"
+                      >
+                        ✓ Pagar
+                      </button>
                     ) : (
                       <div className="flex gap-1">
                         <IconBtn onClick={() => onEdit(t)} title="Editar"><Pencil size={12} /></IconBtn>

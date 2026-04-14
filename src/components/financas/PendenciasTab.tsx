@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import {
   type Pendencia, type Categoria, type PendenciaKind,
-  type Emprestimo, type PagamentoEmprestimo,
+  type Emprestimo, type PagamentoEmprestimo, type Caixinha,
   fmtBRL, labelPay, isVencida, diasAteVencer, hojeISO, agruparDividas, nextId,
   type DividaGrupo,
 } from "@/lib/financas-data";
@@ -27,6 +27,7 @@ export interface PendenciasTabProps {
   pendencias: Pendencia[];
   emprestimos: Emprestimo[];
   cats: Categoria[];
+  caixinhas: Caixinha[];
   cartoes: string[];
   onSave: (pendencias: Pendencia[]) => void;
   onSaveEmprestimos: (e: Emprestimo[]) => void;
@@ -35,7 +36,7 @@ export interface PendenciasTabProps {
 }
 
 export default function PendenciasTab({
-  pendencias, emprestimos, cats, cartoes, onSave, onSaveEmprestimos, onQuitar, onRegistrarPagamentoEmprestimo,
+  pendencias, emprestimos, cats, caixinhas, cartoes, onSave, onSaveEmprestimos, onQuitar, onRegistrarPagamentoEmprestimo,
 }: PendenciasTabProps) {
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [modal, setModal] = useState<null | { editing: Pendencia | null; kind: PendenciaKind }>(null);
@@ -71,12 +72,12 @@ export default function PendenciasTab({
   }
 
   function savePendencia(form: PendenciaForm) {
-    const { editId, desc, val, date_due, cat, pay, kind, credor, notas, parcelar, parcelas } = form;
+    const { editId, desc, val, date_due, cat, pay, kind, credor, notas, caixinha_id, parcelar, parcelas } = form;
     if (!desc.trim() || isNaN(val) || !date_due) { alert("Preencha descrição, valor e vencimento."); return; }
 
     if (editId) {
       onSave(pendencias.map((p) => p.id === editId
-        ? { ...p, desc, val, date_due, cat, pay, credor, notas }
+        ? { ...p, desc, val, date_due, cat, pay, credor, notas, caixinha_id }
         : p));
     } else if (parcelar && parcelas > 1) {
       const parent_id = Date.now();
@@ -98,6 +99,7 @@ export default function PendenciasTab({
           parent_id,
           credor: credor || undefined,
           notas: notas || undefined,
+          caixinha_id,
         });
       }
       onSave([...pendencias, ...novas]);
@@ -110,6 +112,7 @@ export default function PendenciasTab({
           status: "aberto",
           credor: credor || undefined,
           notas: notas || undefined,
+          caixinha_id,
         },
       ]);
     }
@@ -208,6 +211,7 @@ export default function PendenciasTab({
           editing={modal.editing}
           kind={modal.kind}
           cats={cats}
+          caixinhas={caixinhas}
           cartoes={cartoes}
           onClose={() => setModal(null)}
           onSubmit={savePendencia}
@@ -545,16 +549,18 @@ interface PendenciaForm {
   pay: string;
   credor: string;
   notas: string;
+  caixinha_id?: number;
   parcelar: boolean;
   parcelas: number;
 }
 
 function PendenciaModal({
-  editing, kind, cats, cartoes, onClose, onSubmit,
+  editing, kind, cats, caixinhas, cartoes, onClose, onSubmit,
 }: {
   editing: Pendencia | null;
   kind: PendenciaKind;
   cats: Categoria[];
+  caixinhas: Caixinha[];
   cartoes: string[];
   onClose: () => void;
   onSubmit: (f: PendenciaForm) => void;
@@ -567,10 +573,12 @@ function PendenciaModal({
   const [pay, setPay] = useState(editing?.pay || "pix");
   const [credor, setCredor] = useState(editing?.credor || "");
   const [notas, setNotas] = useState(editing?.notas || "");
+  const [caixinhaId, setCaixinhaId] = useState(editing?.caixinha_id ? String(editing.caixinha_id) : "");
   const [parcelar, setParcelar] = useState(false);
   const [parcelas, setParcelas] = useState(2);
 
   const pagar = kind === "pagar";
+  const caixinhasAtivas = caixinhas.filter((c) => !c.arquivada);
 
   return (
     <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
@@ -633,6 +641,21 @@ function PendenciaModal({
             )}
           </>
         )}
+        {caixinhasAtivas.length > 0 && (
+          <Field label={pagar ? "Pagar a partir de uma caixinha (opc.)" : "Depositar em uma caixinha (opc.)"}>
+            <select value={caixinhaId} onChange={(e) => setCaixinhaId(e.target.value)}
+              className="px-3 py-2.5 rounded-lg font-dm text-sm outline-none cursor-pointer"
+              style={{
+                background: "var(--bg-input)",
+                color: "var(--text-primary)",
+                border: "1px solid var(--border-default)",
+              }}>
+              <option value="">— Nenhuma —</option>
+              {caixinhasAtivas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </Field>
+        )}
+
         <Field label="Notas (opcional)">
           <Input value={notas} onChange={setNotas} placeholder="Observações..." />
         </Field>
@@ -646,6 +669,7 @@ function PendenciaModal({
           <button onClick={() => onSubmit({
             editId: editing?.id ?? null,
             kind, desc, val: parseFloat(val), date_due, cat, pay, credor, notas,
+            caixinha_id: caixinhaId ? parseInt(caixinhaId) : undefined,
             parcelar, parcelas,
           })}
             className="flex-1 py-3 rounded-lg font-dm text-xs font-semibold text-white transition-all hover:brightness-110"

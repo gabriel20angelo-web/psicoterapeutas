@@ -33,6 +33,8 @@ export interface FixoItem {
   pay: string;
   day: number;
   active: boolean;
+  /** Mapa "YYYY-MM" → tx_id indicando que o fixo foi realizado naquele mês. */
+  realizacoes?: Record<string, number>;
 }
 
 export type PendenciaKind = "pagar" | "receber";
@@ -54,6 +56,8 @@ export interface Pendencia {
   parent_id?: number;
   credor?: string;
   notas?: string;
+  /** Caixinha destino (a_receber) ou origem (a_pagar) quando a pendência for quitada. */
+  caixinha_id?: number;
 }
 
 export type DirecaoEmprestimo = "emprestei" | "peguei";
@@ -102,6 +106,10 @@ export interface Caixinha {
   icone?: string;
   meta?: number;
   meta_data?: string;
+  /** Quanto o usuário gostaria de depositar nesta caixinha por mês. */
+  meta_mensal?: number;
+  /** Categoria vinculada: gastos nela podem ser descontados; entradas nela podem alimentar. */
+  cat_vinculada?: string;
   movimentos: MovimentoCaixinha[];
   criada_em: string;
   notas?: string;
@@ -362,9 +370,43 @@ export function totalReservado(caixinhas: Caixinha[]): number {
     .reduce((a, c) => a + saldoCaixinha(c), 0);
 }
 
+/** Depósitos feitos em uma caixinha durante um mês específico. */
+export function depositosNoMesCaixinha(c: Caixinha, y: number, m: number): number {
+  return c.movimentos
+    .filter((mv) => mv.tipo === "deposito")
+    .filter((mv) => {
+      const d = new Date(mv.data + "T12:00:00");
+      return d.getFullYear() === y && d.getMonth() === m;
+    })
+    .reduce((a, mv) => a + mv.valor, 0);
+}
+
 export function progressoCaixinha(c: Caixinha): number {
   if (!c.meta || c.meta <= 0) return 0;
   return Math.min(100, (saldoCaixinha(c) / c.meta) * 100);
+}
+
+// ─── Saldos globais (o que o usuário realmente tem) ───
+
+/**
+ * Saldo real: o que já caiu/saiu da conta até hoje.
+ * Caixinhas estão DENTRO disso (são só etiquetas).
+ * Fixos só contam se foram realizados (viraram tx).
+ */
+export function saldoReal(data: FinancasData): number {
+  const hoje = hojeISO();
+  let saldo = 0;
+  for (const t of data.txs) {
+    if (t.date > hoje) continue;
+    if (isEntrada(t.type)) saldo += t.val;
+    else saldo -= t.val;
+  }
+  return saldo;
+}
+
+/** Saldo real menos o que está reservado em caixinhas. */
+export function saldoLivre(data: FinancasData): number {
+  return saldoReal(data) - totalReservado(data.caixinhas);
 }
 
 // ─── Disponível e metas mensais ───
@@ -662,11 +704,19 @@ export function isEntrada(type: string): boolean {
   return type === "entrada" || type === "entrada_fixa" || type === "ganho";
 }
 
-/** Virtual transações que representam os itens fixos ativos no mês */
+export function fixoMesKey(y: number, m: number): string {
+  return `${y}-${String(m + 1).padStart(2, "0")}`;
+}
+
+export function fixoRealizadoEm(f: FixoItem, y: number, m: number): boolean {
+  return !!f.realizacoes?.[fixoMesKey(y, m)];
+}
+
+/** Virtual transações que representam os itens fixos ativos NÃO realizados no mês */
 export function materializarFixos(fixos: FixoItem[], y: number, m: number): Transacao[] {
   const lastDay = new Date(y, m + 1, 0).getDate();
   return fixos
-    .filter((f) => f.active !== false)
+    .filter((f) => f.active !== false && !fixoRealizadoEm(f, y, m))
     .map((f) => {
       const day = Math.min(f.day || 5, lastDay);
       const date = `${y}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;

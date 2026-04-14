@@ -7,8 +7,9 @@ import {
 } from "lucide-react";
 import {
   type Caixinha, type MovimentoCaixinha, type MovimentoTipo, type MetasFinanceiras,
-  type ResumoMensal,
+  type ResumoMensal, type Categoria,
   fmtBRL, hojeISO, nextId, saldoCaixinha, totalReservado, progressoCaixinha,
+  depositosNoMesCaixinha,
 } from "@/lib/financas-data";
 
 const CORES_CAIXINHA = [
@@ -22,12 +23,15 @@ export interface MetasTabProps {
   resumo: ResumoMensal;
   patrimonio: number;
   mesLabel: string;
+  mY: number;
+  mM: number;
+  cats: Categoria[];
   onSaveCaixinhas: (c: Caixinha[]) => void;
   onSaveMetas: (m: MetasFinanceiras) => void;
 }
 
 export default function MetasTab({
-  caixinhas, metas, resumo, patrimonio, mesLabel,
+  caixinhas, metas, resumo, patrimonio, mesLabel, mY, mM, cats,
   onSaveCaixinhas, onSaveMetas,
 }: MetasTabProps) {
   const [caixinhaModal, setCaixinhaModal] = useState<null | { editing: Caixinha | null }>(null);
@@ -42,14 +46,23 @@ export default function MetasTab({
   }
 
   function handleSaveCaixinha(form: CaixinhaForm) {
-    const { editId, nome, cor, meta, meta_data, notas } = form;
+    const { editId, nome, cor, meta, meta_data, meta_mensal, cat_vinculada, notas } = form;
     if (!nome.trim()) { alert("Dê um nome para a caixinha."); return; }
     const metaNum = parseFloat(meta);
     const metaOk = !isNaN(metaNum) && metaNum > 0 ? metaNum : undefined;
+    const metaMensalNum = parseFloat(meta_mensal);
+    const metaMensalOk = !isNaN(metaMensalNum) && metaMensalNum > 0 ? metaMensalNum : undefined;
 
     if (editId) {
       onSaveCaixinhas(caixinhas.map((c) => c.id === editId
-        ? { ...c, nome, cor, meta: metaOk, meta_data: meta_data || undefined, notas: notas || undefined }
+        ? {
+            ...c, nome, cor,
+            meta: metaOk,
+            meta_data: meta_data || undefined,
+            meta_mensal: metaMensalOk,
+            cat_vinculada: cat_vinculada || undefined,
+            notas: notas || undefined,
+          }
         : c));
     } else {
       onSaveCaixinhas([
@@ -58,6 +71,8 @@ export default function MetasTab({
           id: nextId(),
           nome, cor, meta: metaOk,
           meta_data: meta_data || undefined,
+          meta_mensal: metaMensalOk,
+          cat_vinculada: cat_vinculada || undefined,
           movimentos: [],
           criada_em: hojeISO(),
           notas: notas || undefined,
@@ -156,6 +171,8 @@ export default function MetasTab({
               <CaixinhaCard
                 key={c.id}
                 c={c}
+                mY={mY}
+                mM={mM}
                 expanded={expandedCx.has(c.id)}
                 onToggle={() => toggleExpand(c.id)}
                 onDeposito={() => setMovModal({ caixinha: c, tipo: "deposito" })}
@@ -180,6 +197,8 @@ export default function MetasTab({
                 <CaixinhaCard
                   key={c.id}
                   c={c}
+                  mY={mY}
+                  mM={mM}
                   expanded={expandedCx.has(c.id)}
                   onToggle={() => toggleExpand(c.id)}
                   onDeposito={() => setMovModal({ caixinha: c, tipo: "deposito" })}
@@ -198,6 +217,7 @@ export default function MetasTab({
       {caixinhaModal && (
         <CaixinhaModal
           editing={caixinhaModal.editing}
+          cats={cats}
           onClose={() => setCaixinhaModal(null)}
           onSubmit={handleSaveCaixinha}
         />
@@ -523,9 +543,11 @@ function MetaMini({
 // ─── Card: Caixinha ───────────────────────────────
 
 function CaixinhaCard({
-  c, expanded, onToggle, onDeposito, onSaque, onEdit, onArquivar, onDelete, onDeleteMov,
+  c, mY, mM, expanded, onToggle, onDeposito, onSaque, onEdit, onArquivar, onDelete, onDeleteMov,
 }: {
   c: Caixinha;
+  mY: number;
+  mM: number;
   expanded: boolean;
   onToggle: () => void;
   onDeposito: () => void;
@@ -538,6 +560,8 @@ function CaixinhaCard({
   const saldo = saldoCaixinha(c);
   const pct = progressoCaixinha(c);
   const atingida = c.meta && saldo >= c.meta;
+  const depMes = depositosNoMesCaixinha(c, mY, mM);
+  const pctMes = c.meta_mensal ? Math.min(100, (depMes / c.meta_mensal) * 100) : 0;
 
   return (
     <div className="rounded-xl overflow-hidden"
@@ -589,7 +613,7 @@ function CaixinhaCard({
             </div>
             <div className="flex justify-between mt-1">
               <span className="font-dm text-[10px]" style={{ color: "var(--text-tertiary)" }}>
-                {pct.toFixed(0)}% da meta
+                {pct.toFixed(0)}% da meta total
               </span>
               {c.meta > saldo && (
                 <span className="font-mono text-[10px]" style={{ color: "var(--text-tertiary)" }}>
@@ -597,6 +621,30 @@ function CaixinhaCard({
                 </span>
               )}
             </div>
+          </div>
+        )}
+
+        {c.meta_mensal && (
+          <div className="mb-3 p-2 rounded-md"
+            style={{ background: c.cor + "0a", border: `1px dashed ${c.cor}33` }}>
+            <div className="flex justify-between mb-1">
+              <span className="font-dm text-[10px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+                Meta mensal
+              </span>
+              <span className="font-mono text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+                R$ {fmtBRL(depMes)} / R$ {fmtBRL(c.meta_mensal)}
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-hover)" }}>
+              <div className="h-full transition-all"
+                style={{ width: `${pctMes}%`, background: c.cor, opacity: 0.7 }} />
+            </div>
+          </div>
+        )}
+
+        {c.cat_vinculada && (
+          <div className="mb-3 font-dm text-[10px]" style={{ color: "var(--text-tertiary)" }}>
+            🔗 Vinculada à categoria: <strong style={{ color: c.cor }}>{c.cat_vinculada}</strong>
           </div>
         )}
 
@@ -686,13 +734,16 @@ interface CaixinhaForm {
   cor: string;
   meta: string;
   meta_data: string;
+  meta_mensal: string;
+  cat_vinculada: string;
   notas: string;
 }
 
 function CaixinhaModal({
-  editing, onClose, onSubmit,
+  editing, cats, onClose, onSubmit,
 }: {
   editing: Caixinha | null;
+  cats: Categoria[];
   onClose: () => void;
   onSubmit: (f: CaixinhaForm) => void;
 }) {
@@ -700,6 +751,8 @@ function CaixinhaModal({
   const [cor, setCor] = useState(editing?.cor || CORES_CAIXINHA[0]);
   const [meta, setMeta] = useState(editing?.meta ? String(editing.meta) : "");
   const [meta_data, setMetaData] = useState(editing?.meta_data || "");
+  const [metaMensal, setMetaMensal] = useState(editing?.meta_mensal ? String(editing.meta_mensal) : "");
+  const [catVinc, setCatVinc] = useState(editing?.cat_vinculada || "");
   const [notas, setNotas] = useState(editing?.notas || "");
 
   return (
@@ -739,13 +792,30 @@ function CaixinhaModal({
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Meta (R$) — opcional">
+          <Field label="Meta total (R$) — opcional">
             <Input type="number" value={meta} onChange={setMeta} placeholder="Ex: 5000" />
           </Field>
           <Field label="Prazo (opcional)">
             <Input type="date" value={meta_data} onChange={setMetaData} />
           </Field>
         </div>
+
+        <Field label="Quero reservar por mês (R$)">
+          <Input type="number" value={metaMensal} onChange={setMetaMensal} placeholder="Ex: 200 — mostra progresso do mês" />
+        </Field>
+
+        <Field label="Categoria vinculada (opcional)">
+          <select value={catVinc} onChange={(e) => setCatVinc(e.target.value)}
+            className="px-3 py-2.5 rounded-lg font-dm text-sm outline-none cursor-pointer"
+            style={{
+              background: "var(--bg-input)",
+              color: "var(--text-primary)",
+              border: "1px solid var(--border-default)",
+            }}>
+            <option value="">— Nenhuma —</option>
+            {cats.map((c) => <option key={c.n} value={c.n}>{c.n}</option>)}
+          </select>
+        </Field>
 
         <Field label="Notas (opcional)">
           <Input value={notas} onChange={setNotas} placeholder="Para que serve esta caixinha?" />
@@ -759,7 +829,7 @@ function CaixinhaModal({
           </button>
           <button onClick={() => onSubmit({
             editId: editing?.id ?? null,
-            nome, cor, meta, meta_data, notas,
+            nome, cor, meta, meta_data, meta_mensal: metaMensal, cat_vinculada: catVinc, notas,
           })}
             className="flex-1 py-3 rounded-lg font-dm text-xs font-semibold text-white transition-all hover:brightness-110"
             style={{ background: cor }}>
