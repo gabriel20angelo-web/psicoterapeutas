@@ -13,6 +13,7 @@ import Tabs from "@/components/ui/Tabs";
 import EmptyState from "@/components/ui/EmptyState";
 import CanvasEditor from "@/components/anotacoes/CanvasEditor";
 import { getPaciente, getAtividadesByPaciente, getAtividades, updatePaciente, getTemplates, updateAtividade, createAtividade, deleteAtividade, deletePaciente } from "@/lib/data";
+import { getCasoEntries, createCasoEntry, updateCasoEntry, deleteCasoEntry, deleteAllCasoEntries, type CasoEntry } from "@/lib/caso-entries";
 import ActivityDetailModal from "@/components/agenda/ActivityDetailModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { fillTemplate, buildWhatsAppUrl, buildMessageVars } from "@/lib/whatsapp";
@@ -59,6 +60,11 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
   const [noteTab, setNoteTab] = useState<Record<string, NoteTab>>({});
   const [generalNote, setGeneralNote] = useState('');
   const [generalSaved, setGeneralSaved] = useState(false);
+  // Caso geral: entries em cards
+  const [entries, setEntries] = useState<CasoEntry[]>([]);
+  const [newEntry, setNewEntry] = useState('');
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editingEntryContent, setEditingEntryContent] = useState('');
   const [isEditingInfo, setIsEditingInfo] = useState(false);
   const [editForm, setEditForm] = useState({
     nome: paciente?.nome || '',
@@ -108,9 +114,47 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
       setPreSessionNotes(pNotes);
       setGeneralNote(gNote);
       setGeneralNoteLoaded(true);
+      setEntries(getCasoEntries(paciente.id));
     })();
     return () => { cancelled = true; };
   }, [paciente?.id]);
+
+  const handleCreateEntry = () => {
+    if (!paciente) return;
+    const content = newEntry.trim();
+    if (!content) return;
+    createCasoEntry(paciente.id, content);
+    setEntries(getCasoEntries(paciente.id));
+    setNewEntry('');
+    toast('Entrada adicionada', { type: 'success' });
+  };
+
+  const handleStartEditEntry = (e: CasoEntry) => {
+    setEditingEntryId(e.id);
+    setEditingEntryContent(e.content);
+  };
+
+  const handleSaveEntryEdit = () => {
+    if (!paciente || !editingEntryId) return;
+    updateCasoEntry(paciente.id, editingEntryId, editingEntryContent);
+    setEntries(getCasoEntries(paciente.id));
+    setEditingEntryId(null);
+    setEditingEntryContent('');
+    toast('Entrada atualizada', { type: 'success' });
+  };
+
+  const handleCancelEntryEdit = () => {
+    setEditingEntryId(null);
+    setEditingEntryContent('');
+  };
+
+  const handleDeleteEntry = (id: string) => {
+    if (!paciente) return;
+    if (!confirm('Excluir esta entrada?')) return;
+    deleteCasoEntry(paciente.id, id);
+    setEntries(getCasoEntries(paciente.id));
+    toast('Entrada excluída', { type: 'warning' });
+  };
 
   // ─── Dirty state tracking & beforeunload warning (#4) ───
   const [isDirty, setIsDirty] = useState(false);
@@ -208,6 +252,7 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
       return;
     }
     deletePaciente(paciente.id);
+    deleteAllCasoEntries(paciente.id);
     toast(`${paciente.nome} excluído permanentemente`, { type: 'success' });
     router.push('/pacientes');
   };
@@ -468,7 +513,9 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
         <button onClick={() => router.push('/pacientes')} className="flex items-center gap-1.5 font-dm text-sm text-[var(--text-secondary)] hover:text-[var(--orange-500)] transition-colors mb-4"><ArrowLeft size={16} /> Voltar</button>
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-[var(--orange-500)] flex items-center justify-center"><span className="font-fraunces font-bold text-white text-lg">{paciente.nome.split(' ').map(n => n[0]).slice(0, 2).join('')}</span></div>
+            <div className="w-12 h-12 rounded-full bg-[var(--orange-500)] flex items-center justify-center shadow-sm">
+              <User size={22} className="text-white" strokeWidth={2} />
+            </div>
             <div>
               <div className="flex items-center gap-2"><h1 className="font-fraunces font-bold text-xl text-[var(--text-primary)]">{paciente.nome}{age !== null && <span className="font-dm text-sm font-normal text-[var(--text-secondary)]">, {age} anos</span>}</h1><Badge {...statusColor} /></div>
               <p className="font-dm text-sm text-[var(--text-secondary)]">{paciente.modalidade}{paciente.dia_fixo && paciente.horario_fixo ? ` · ${paciente.dia_fixo} às ${paciente.horario_fixo}` : ''}</p>
@@ -622,7 +669,7 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
           {sessions.length === 0 && !showNewSession ? <EmptyState message="Nenhuma sessão registrada" /> : sessions.length > 0 ? (
             <div className="space-y-4">{sessions.map((s, i) => {
               const note = getNoteContent(s.id); const isEditing = editingId === s.id; const mode = getMode(s.id);
-              const canvasKey = `allos-canvas-session-${paciente.id}-${s.id}`; const sColor = STATUS_COLORS[s.status];
+              const canvasKey = `session-${s.id}`; const sColor = STATUS_COLORS[s.status];
               const isFuture = new Date(s.data_inicio) > new Date();
               return (<motion.div key={s.id} {...staggerChild(i)} style={sessionMenuOpen === s.id ? { zIndex: 100, position: 'relative' } : undefined}><Card className="!overflow-visible">
                 <div className="flex items-start justify-between gap-3 mb-3">
@@ -716,7 +763,108 @@ export default function PatientProfilePage({ overrideId }: { overrideId?: string
           </div>
           <textarea value={generalNote} onChange={e => handleGeneralNoteChange(e.target.value)} placeholder="Hipóteses, observações longitudinais, plano terapêutico, formulação de caso..." rows={14} className="w-full px-4 py-3 rounded-xl font-dm text-sm bg-[var(--bg-input)] border border-[var(--border-strong)] text-[var(--text-primary)] outline-none focus:border-[var(--orange-500)] transition-colors placeholder:text-[var(--text-tertiary)] resize-y leading-relaxed" />
           <div className="flex justify-end mt-3"><Button onClick={handleSaveGeneral}>Salvar</Button></div>
-        </Card></motion.div>)}
+        </Card>
+
+        {/* Entradas do caso (cards) */}
+        <Card className="mt-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="font-dm text-sm font-semibold text-[var(--text-primary)]">Entradas do caso</p>
+              <p className="font-dm text-xs text-[var(--text-tertiary)]">Cada entrada vira um card datado. Mais recentes no topo.</p>
+            </div>
+            <span className="font-dm text-xs text-[var(--text-tertiary)]">{entries.length} {entries.length === 1 ? 'entrada' : 'entradas'}</span>
+          </div>
+
+          <div className="flex flex-col gap-2 mb-4">
+            <textarea
+              value={newEntry}
+              onChange={(e) => setNewEntry(e.target.value)}
+              placeholder="Escreva uma observação, hipótese, evolução... (Ctrl+Enter para salvar)"
+              rows={3}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                  e.preventDefault();
+                  handleCreateEntry();
+                }
+              }}
+              className="w-full px-3 py-2.5 rounded-xl font-dm text-sm bg-[var(--bg-input)] border border-[var(--border-strong)] text-[var(--text-primary)] outline-none focus:border-[var(--orange-500)] transition-colors placeholder:text-[var(--text-tertiary)] resize-y"
+            />
+            <div className="flex justify-end">
+              <Button size="sm" onClick={handleCreateEntry} icon={<Plus size={14} />}>Adicionar entrada</Button>
+            </div>
+          </div>
+
+          {entries.length === 0 ? (
+            <EmptyState message="Nenhuma entrada ainda. Use o campo acima para adicionar a primeira." />
+          ) : (
+            <div className="space-y-3">
+              {entries.map((entry) => {
+                const isEditing = editingEntryId === entry.id;
+                const createdDate = new Date(entry.created_at);
+                const updatedDate = new Date(entry.updated_at);
+                const isEdited = updatedDate.getTime() - createdDate.getTime() > 1000;
+                return (
+                  <div
+                    key={entry.id}
+                    className="p-4 rounded-xl border bg-[var(--bg-input)]"
+                    style={{ borderColor: "var(--border-default)" }}
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
+                          {format(createdDate, "dd 'de' MMMM 'de' yyyy · HH:mm", { locale: ptBR })}
+                        </span>
+                        {isEdited && (
+                          <span className="font-dm text-[9px] italic text-[var(--text-tertiary)]">
+                            (editado {format(updatedDate, "dd/MM HH:mm")})
+                          </span>
+                        )}
+                      </div>
+                      {!isEditing && (
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleStartEditEntry(entry)}
+                            className="w-6 h-6 rounded-md flex items-center justify-center text-[var(--text-tertiary)] hover:text-[var(--orange-500)] hover:bg-[var(--orange-glow)] transition-colors"
+                            title="Editar"
+                          >
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteEntry(entry.id)}
+                            className="w-6 h-6 rounded-md flex items-center justify-center text-[var(--text-tertiary)] hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                            title="Excluir"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {isEditing ? (
+                      <>
+                        <textarea
+                          value={editingEntryContent}
+                          onChange={(e) => setEditingEntryContent(e.target.value)}
+                          rows={Math.max(3, editingEntryContent.split('\n').length + 1)}
+                          autoFocus
+                          className="w-full px-3 py-2 rounded-lg font-dm text-sm bg-[var(--bg-card)] border border-[var(--border-default)] text-[var(--text-primary)] outline-none focus:border-[var(--orange-500)] transition-colors resize-y leading-relaxed"
+                        />
+                        <div className="flex justify-end gap-2 mt-2">
+                          <Button size="sm" variant="secondary" onClick={handleCancelEntryEdit}>Cancelar</Button>
+                          <Button size="sm" onClick={handleSaveEntryEdit}>Salvar</Button>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="font-dm text-sm text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed">
+                        {entry.content}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      </motion.div>)}
 
       {/* ══ CANVAS ══ */}
       {mainTab === "canvas" && (<motion.div {...fadeUp(0.15)}><CanvasEditor pacienteId={paciente.id} /></motion.div>)}

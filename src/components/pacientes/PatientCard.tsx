@@ -1,12 +1,11 @@
 "use client";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { Send, FileText } from "lucide-react";
+import { Send, FileText, User } from "lucide-react";
 import WhatsAppIcon from "@/components/ui/WhatsAppIcon";
 import Badge from "@/components/ui/Badge";
 import { STATUS_PACIENTE_COLORS } from "@/lib/status-colors";
 import { staggerChild } from "@/lib/animations";
-import { getInitials } from "@/lib/utils";
 import { getAtividadesByPaciente } from "@/lib/data";
 import { differenceInYears } from "date-fns";
 import type { Paciente, Atividade } from "@/types/database";
@@ -57,7 +56,7 @@ export default function PatientCard({ paciente, index, lastSessionDate, nextSess
         <div className="flex items-start gap-4">
           {/* Avatar */}
           <div className="w-12 h-12 rounded-full bg-[var(--orange-glow)] dark:bg-[rgba(200,75,49,.12)] flex items-center justify-center flex-shrink-0 border border-[var(--border-subtle)]">
-            <span className="font-fraunces font-bold text-sm text-[var(--orange-500)]">{getInitials(paciente.nome)}</span>
+            <User size={20} className="text-[var(--orange-500)]" strokeWidth={2} />
           </div>
 
           <div className="flex-1 min-w-0">

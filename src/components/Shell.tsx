@@ -12,6 +12,7 @@ import { initForjaSync } from "@/lib/forja-data";
 import { initUsinaSync } from "@/lib/usina-data";
 import { initConteudoSync } from "@/lib/conteudo-data";
 import { initFinancasSync } from "@/lib/financas-data";
+import { initCasoEntriesSync } from "@/lib/caso-entries";
 import { supabase } from "@/lib/supabase";
 
 const FALLBACK_USER_ID = process.env.NEXT_PUBLIC_USER_ID || "00000000-0000-0000-0000-000000000001";
@@ -87,6 +88,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         initUsinaSync(),
         initConteudoSync(),
         initFinancasSync(),
+        initCasoEntriesSync(),
       ]);
     }).then(() => setDataReady(true)).catch(() => setDataReady(true));
   }, []);
