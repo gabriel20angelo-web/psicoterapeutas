@@ -10,6 +10,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import PendenciasTab from "@/components/financas/PendenciasTab";
 import MetasTab from "@/components/financas/MetasTab";
 import CartoesTab from "@/components/financas/CartoesTab";
+import CalendarioTab from "@/components/financas/CalendarioTab";
 import {
   getFinancas, saveCats, saveTxs, saveFixos, savePendencias, saveEmprestimos, saveOrcamentos,
   saveCaixinhas, saveMetas, saveCartoes,
@@ -25,10 +26,11 @@ import {
   type Cartao, type MovimentoCaixinha, type PagamentoParcialPendencia,
 } from "@/lib/financas-data";
 
-type TabId = "lancamentos" | "fixos" | "pendencias" | "metas" | "cartoes" | "categorias" | "graficos" | "projecao";
+type TabId = "lancamentos" | "calendario" | "fixos" | "pendencias" | "metas" | "cartoes" | "categorias" | "graficos" | "projecao";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "lancamentos", label: "Lançamentos" },
+  { id: "calendario", label: "Calendário" },
   { id: "fixos", label: "Fixos" },
   { id: "pendencias", label: "Pendências" },
   { id: "metas", label: "Metas & Caixinhas" },
@@ -907,6 +909,15 @@ function FinancasInner() {
             const f = data.fixos.find((x) => x.id === fixoId);
             if (f) setRealizarModal(f);
           }}
+        />
+      )}
+
+      {tab === "calendario" && (
+        <CalendarioTab
+          txs={data.txs}
+          cats={data.cats}
+          mY={mY}
+          mM={mM}
         />
       )}
 
