@@ -6,7 +6,7 @@ import { ptBR } from "date-fns/locale";
 import { motion } from "framer-motion";
 import { CheckCircle, Clock } from "lucide-react";
 import type { Atividade } from "@/types/database";
-import { getTimeSlots, getActivityPosition } from "@/lib/calendar-utils";
+import { getTimeSlots, getActivityPosition, displayAtividadeTitulo } from "@/lib/calendar-utils";
 import { TIPO_COLORS, STATUS_COLORS } from "@/lib/status-colors";
 import { getSettings } from "@/lib/data";
 import Badge from "@/components/ui/Badge";
@@ -190,7 +190,7 @@ export default function DayView({ currentDate, activities, onClickActivity, onCl
                 }}
                 role="button"
                 tabIndex={0}
-                aria-label={`${activity.titulo}, ${startTime} - ${endTime}`}
+                aria-label={`${displayAtividadeTitulo(activity)}, ${startTime} - ${endTime}`}
                 onClick={(e) => { e.stopPropagation(); onClickActivity(activity); }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -209,7 +209,7 @@ export default function DayView({ currentDate, activities, onClickActivity, onCl
                         className="font-dm text-sm font-bold leading-tight truncate"
                         style={{ color: isDark ? tipo.darkText : tipo.text }}
                       >
-                        {activity.titulo}
+                        {displayAtividadeTitulo(activity)}
                       </p>
                     </div>
                     <p

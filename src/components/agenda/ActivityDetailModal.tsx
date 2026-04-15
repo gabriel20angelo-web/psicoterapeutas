@@ -17,7 +17,7 @@ import type { Atividade } from "@/types/database";
 import { updateAtividade, deleteAtividade, getTemplates, createAtividade } from "@/lib/data";
 import { useAuth } from "@/contexts/AuthContext";
 import { fillTemplate, buildWhatsAppUrl, buildMessageVars } from "@/lib/whatsapp";
-import { formatTimeRange } from "@/lib/calendar-utils";
+import { formatTimeRange, displayAtividadeTitulo } from "@/lib/calendar-utils";
 import { TIPO_COLORS, STATUS_COLORS } from "@/lib/status-colors";
 import { useToast } from "@/contexts/ToastContext";
 
@@ -209,7 +209,12 @@ export default function ActivityDetailModal({ isOpen, onClose, activity, onUpdat
       <div className="space-y-5">
         {/* Header */}
         <div>
-          <h3 className="font-fraunces font-bold text-lg text-[var(--text-primary)] mb-2">{activity.titulo}</h3>
+          {/* Título dinâmico via helper central (displayAtividadeTitulo) — garante
+              que sessões mostrem sempre o nome atual do paciente vinculado,
+              mesmo que o título salvo esteja stale (paciente renomeado). */}
+          <h3 className="font-fraunces font-bold text-lg text-[var(--text-primary)] mb-2">
+            {displayAtividadeTitulo(activity)}
+          </h3>
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <Badge {...tipoColors} size="md" />
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${statusColors.bg} ${statusColors.text}`}>

@@ -364,8 +364,45 @@ export function updatePaciente(id: string, data: Partial<Paciente>): Paciente | 
     if (data[k] !== undefined) (clean as any)[k] = data[k];
   }
   const updated_at = new Date().toISOString();
+  const nomeAntigo = pacientes[idx].nome;
   pacientes[idx] = { ...pacientes[idx], ...clean, updated_at };
   saveLocal(LS.pacientes, pacientes);
+
+  // Cascade: se o nome mudou, atualiza o título das sessões vinculadas que
+  // ainda usam o padrão automático ("Sessão com <nome antigo>" ou
+  // "Sessão — <nome antigo>" / "Sessão - <nome antigo>"). Títulos que o
+  // usuário digitou manualmente e não batem com o padrão são preservados.
+  if (clean.nome && clean.nome !== nomeAntigo) {
+    const novoNome = clean.nome;
+    const patterns = [
+      `Sessão com ${nomeAntigo}`,
+      `Sessão — ${nomeAntigo}`,
+      `Sessão - ${nomeAntigo}`,
+    ];
+    const atividadesAtualizadas: string[] = [];
+    atividades = atividades.map((a) => {
+      if (a.paciente_id !== id) return a;
+      if (a.tipo !== 'sessao') return a;
+      if (!patterns.includes(a.titulo)) return a;
+      atividadesAtualizadas.push(a.id);
+      return { ...a, titulo: `Sessão com ${novoNome}`, updated_at };
+    });
+    if (atividadesAtualizadas.length > 0) {
+      saveLocal(LS.atividades, atividades);
+      if (_useSupabase) {
+        supabase
+          .from('atividades')
+          .update({ titulo: `Sessão com ${novoNome}`, updated_at })
+          .in('id', atividadesAtualizadas)
+          .then(({ error }) => {
+            if (error && process.env.NODE_ENV === 'development') {
+              console.warn('[Data] cascade update titulo sessoes falhou:', error.message);
+            }
+          });
+      }
+    }
+  }
+
   notifyChange();
   if (_useSupabase) {
     supabase.from('pacientes').update({ ...clean, updated_at }).eq('id', id).then(({ error }) => {

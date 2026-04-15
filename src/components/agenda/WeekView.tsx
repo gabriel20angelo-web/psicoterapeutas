@@ -6,7 +6,7 @@ import { ptBR } from "date-fns/locale";
 import { motion } from "framer-motion";
 import { CheckCircle, Clock } from "lucide-react";
 import type { Atividade } from "@/types/database";
-import { getTimeSlots, getActivityPosition, getWeekDays } from "@/lib/calendar-utils";
+import { getTimeSlots, getActivityPosition, getWeekDays, displayAtividadeTitulo } from "@/lib/calendar-utils";
 import { getSettings } from "@/lib/data";
 import { staggerChild } from "@/lib/animations";
 
@@ -227,7 +227,8 @@ export default function WeekView({ currentDate, activities, onClickActivity, onC
                   const { top, height } = getActivityPosition(activity, START_HOUR, HOUR_HEIGHT);
                   const startTime = format(new Date(activity.data_inicio), "HH:mm");
                   const endTime = format(new Date(activity.data_fim), "HH:mm");
-                  const tooltipText = `${activity.titulo} (${startTime} - ${endTime})${activity.paciente ? ` - ${activity.paciente.nome}` : ""}`;
+                  const displayTitle = displayAtividadeTitulo(activity);
+                  const tooltipText = `${displayTitle} (${startTime} - ${endTime})`;
                   const layout = layoutMap.get(activity.id) || { groupSize: 1, indexInGroup: 0 };
                   const widthPercent = 100 / layout.groupSize;
                   const leftPercent = layout.indexInGroup * widthPercent;
@@ -268,7 +269,7 @@ export default function WeekView({ currentDate, activities, onClickActivity, onC
                           className="font-dm text-[11px] font-bold leading-tight truncate"
                           style={{ color: isDark ? tipo.darkText : tipo.text }}
                         >
-                          {activity.titulo}
+                          {displayTitle}
                         </p>
                       </div>
                       {height > 30 && (

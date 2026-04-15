@@ -4,7 +4,7 @@ import { format, isSameDay, isSameMonth, isToday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion } from "framer-motion";
 import type { Atividade } from "@/types/database";
-import { getMonthDays, WEEKDAYS_SHORT } from "@/lib/calendar-utils";
+import { getMonthDays, WEEKDAYS_SHORT, displayAtividadeTitulo } from "@/lib/calendar-utils";
 import { staggerChild } from "@/lib/animations";
 
 interface Props {
@@ -98,7 +98,7 @@ export default function MonthView({ currentDate, activities, onSelectDay }: Prop
                         key={act.id}
                         className={`w-2 h-2 rounded-full ${act.status === "cancelada" ? "opacity-30" : ""}`}
                         style={{ backgroundColor: DOT_COLORS[act.tipo] || DOT_COLORS.outro }}
-                        title={`${act.titulo} - ${format(new Date(act.data_inicio), "HH:mm")}`}
+                        title={`${displayAtividadeTitulo(act)} - ${format(new Date(act.data_inicio), "HH:mm")}`}
                       />
                     ))}
                     {dayActs.length > 5 && (
@@ -121,7 +121,7 @@ export default function MonthView({ currentDate, activities, onSelectDay }: Prop
                             color: isDark ? style.darkText : style.text,
                           }}
                         >
-                          {format(new Date(act.data_inicio), "HH:mm")} {act.titulo}
+                          {format(new Date(act.data_inicio), "HH:mm")} {displayAtividadeTitulo(act)}
                         </div>
                       );
                     })}

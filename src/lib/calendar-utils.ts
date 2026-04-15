@@ -6,6 +6,19 @@ import {
 import { ptBR } from 'date-fns/locale';
 import type { Atividade, Recorrencia } from '@/types/database';
 
+/**
+ * Retorna o título para exibir de uma atividade.
+ * Para sessões com paciente vinculado, sempre usa o nome ATUAL do paciente —
+ * evita que o título fique stale se o paciente foi renomeado depois da criação.
+ * Para outros tipos (ou sessões sem paciente), usa o titulo salvo.
+ */
+export function displayAtividadeTitulo(a: Atividade): string {
+  if (a.tipo === "sessao" && a.paciente) {
+    return `Sessão com ${a.paciente.nome}`;
+  }
+  return a.titulo;
+}
+
 export function getWeekDays(date: Date): Date[] {
   const start = startOfWeek(date, { weekStartsOn: 1 });
   const end = endOfWeek(date, { weekStartsOn: 1 });
