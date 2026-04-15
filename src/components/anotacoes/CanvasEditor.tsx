@@ -361,18 +361,78 @@ function normalizeSide(s: any): Side | undefined {
   return undefined;
 }
 
+/**
+ * Serializa um CanvasDoc no formato estrito do JSON Canvas spec, tal como
+ * o Obsidian espera: coordenadas inteiras, apenas os campos conhecidos do
+ * spec, sem valores undefined ou vazios, sem viewport interno.
+ */
+function serializeForObsidian(doc: CanvasDoc): string {
+  const nodes = doc.nodes.map((n) => {
+    const out: Record<string, unknown> = {
+      id: n.id,
+      type: n.type,
+      x: Math.round(n.x),
+      y: Math.round(n.y),
+      width: Math.max(1, Math.round(n.width)),
+      height: Math.max(1, Math.round(n.height)),
+    };
+    if (n.color && n.color.length > 0) out.color = n.color;
+    if (n.type === "text") {
+      out.text = n.text || "";
+    } else if (n.type === "file") {
+      out.file = n.file;
+      if (n.subpath) out.subpath = n.subpath;
+    } else if (n.type === "link") {
+      out.url = n.url;
+    } else if (n.type === "group") {
+      if (n.label) out.label = n.label;
+      if (n.background) out.background = n.background;
+      if (n.backgroundStyle) out.backgroundStyle = n.backgroundStyle;
+    }
+    return out;
+  });
+
+  const edges = doc.edges.map((e) => {
+    const out: Record<string, unknown> = {
+      id: e.id,
+      fromNode: e.fromNode,
+      toNode: e.toNode,
+    };
+    if (e.fromSide) out.fromSide = e.fromSide;
+    if (e.fromEnd && e.fromEnd !== "none") out.fromEnd = e.fromEnd;
+    if (e.toSide) out.toSide = e.toSide;
+    // toEnd "arrow" é o default implícito, podemos emitir explicitamente
+    // para clareza, mas omitir é aceito pelo spec
+    if (e.toEnd && e.toEnd !== "arrow") out.toEnd = e.toEnd;
+    if (e.color && e.color.length > 0) out.color = e.color;
+    if (e.label) out.label = e.label;
+    return out;
+  });
+
+  return JSON.stringify({ nodes, edges }, null, "\t");
+}
+
 async function saveCanvasAsync(pacienteId: string, data: CanvasDoc, storageKey?: string): Promise<void> {
-  const obsidianData: ObsidianCanvasFile = { nodes: data.nodes, edges: data.edges };
+  // Formato Obsidian (spec puro) para o arquivo .canvas
+  const obsidianJson = serializeForObsidian(data);
 
   if (isElectron()) {
     const filePath = await getCanvasPath(pacienteId, storageKey);
     if (filePath) {
-      try { await window.electronAPI!.fs.writeFile(filePath, JSON.stringify(obsidianData, null, "\t")); } catch {}
+      try { await window.electronAPI!.fs.writeFile(filePath, obsidianJson); } catch {}
     }
   }
 
+  // Local mantém viewport (para restaurar zoom/pan), mas os nodes/edges já
+  // vão sanitizados para evitar divergência entre os dois formatos
   const key = getLocalKey(pacienteId, storageKey);
-  try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
+  try {
+    const localPayload = {
+      ...JSON.parse(obsidianJson),
+      viewport: data.viewport,
+    };
+    localStorage.setItem(key, JSON.stringify(localPayload));
+  } catch {}
 }
 
 // ─── Edge geometry ──────────────────────────────────
@@ -470,8 +530,15 @@ async function loadFileContent(filePath: string, subpath?: string): Promise<stri
 
 // ─── Helpers ────────────────────────────────────────
 
-function uid(prefix = "n"): string {
-  return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+/**
+ * Gera um ID hex de 16 caracteres, no mesmo formato que o Obsidian usa
+ * para os IDs de nodes/edges no arquivo .canvas. Obsidian é tolerante a
+ * strings arbitrárias, mas manter o formato evita qualquer risco.
+ */
+function uid(_prefix = ""): string {
+  const ts = Date.now().toString(16).padStart(12, "0").slice(-12);
+  const rnd = Math.floor(Math.random() * 0xffff).toString(16).padStart(4, "0");
+  return ts + rnd;
 }
 
 function snap(v: number): number {
@@ -703,15 +770,22 @@ export default function CanvasEditor({ pacienteId, storageKey }: CanvasEditorPro
     ev.target.value = "";
   };
   const handleExport = () => {
-    const data: ObsidianCanvasFile = { nodes: doc.nodes, edges: doc.edges };
-    const blob = new Blob([JSON.stringify(data, null, "\t")], { type: "application/json" });
+    // Usa a mesma função de serialização do auto-save — garante arquivo
+    // idêntico ao que o Obsidian lê do vault, com todos os campos
+    // sanitizados conforme o spec JSON Canvas.
+    const json = serializeForObsidian(doc);
+    // Força octet-stream pra evitar que o browser tente "interpretar"
+    // como JSON ou mudar a extensão
+    const blob = new Blob([json], { type: "application/octet-stream" });
     const a = document.createElement("a");
     const paciente = getPaciente(pacienteId);
     const safeName = paciente ? sanitizeName(paciente.nome) : "canvas";
     a.download = `${safeName}${storageKey ? "-" + storageKey : ""}.canvas`;
     a.href = URL.createObjectURL(blob);
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
   const handleClear = () => {
     if (doc.nodes.length === 0 && doc.edges.length === 0) return;
