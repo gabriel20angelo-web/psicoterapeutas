@@ -279,9 +279,10 @@ export function calcularFrequencia(disciplinaId: string): FrequenciaResumo {
   const justificadas = registros.filter(r => r.presenca === "justificada").length;
   const total_registradas = registros.length + faltasManuais;
 
-  // Percentual de frequência = presenças / total previstas * 100
+  // Frequência implícita: assume presença em todas as aulas não marcadas como falta.
+  // Justificadas contam como presença para fins de frequência.
   const percentual = total_previstas > 0
-    ? Math.round((presentes + justificadas) / total_previstas * 100)
+    ? Math.max(0, Math.round(((total_previstas - ausentes) / total_previstas) * 100))
     : 100;
 
   // Risco: 25% faltas = reprovação. Atenção a partir de 15% faltas.

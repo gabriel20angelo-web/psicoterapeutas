@@ -127,27 +127,34 @@ export default function FrequenciaPage() {
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-lg font-bold" style={{ color: cfg.color }}>{r.percentual}%</span>
                       <div className="font-dm text-[10px] text-[var(--text-tertiary)] text-right">
-                        <p>{r.presentes}P / {r.ausentes}F / {r.justificadas}J</p>
-                        <p>{r.total_registradas}/{r.total_previstas} aulas</p>
+                        <p><span className="font-semibold" style={{ color: "var(--text-secondary)" }}>{r.ausentes}</span> {r.ausentes === 1 ? "falta" : "faltas"}{r.justificadas > 0 && ` · ${r.justificadas} justif.`}</p>
+                        <p>de {r.total_previstas} aulas</p>
                       </div>
                     </div>
 
                     {/* Limite de faltas */}
-                    {d.total_aulas_previstas > 0 && (
-                      <div className="mt-2 pt-2 border-t border-[var(--border-subtle)]">
-                        <div className="flex items-center justify-between">
-                          <span className="font-dm text-[10px] text-[var(--text-tertiary)]">Faltas permitidas:</span>
-                          <span className="font-mono text-xs font-semibold" style={{ color: r.ausentes >= Math.floor(d.total_aulas_previstas * 0.25) ? "var(--red-text)" : "var(--text-secondary)" }}>
-                            {r.ausentes}/{Math.floor(d.total_aulas_previstas * 0.25)}
-                          </span>
-                        </div>
-                        {r.ausentes < Math.floor(d.total_aulas_previstas * 0.25) && (
-                          <p className="font-dm text-[10px] text-[var(--text-tertiary)] mt-0.5">
-                            Restam {Math.floor(d.total_aulas_previstas * 0.25) - r.ausentes} faltas
+                    {d.total_aulas_previstas > 0 && (() => {
+                      const maxFaltas = Math.floor(d.total_aulas_previstas * 0.25);
+                      const restantes = maxFaltas - r.ausentes;
+                      const excedeu = restantes < 0;
+                      return (
+                        <div className="mt-2 pt-2 border-t border-[var(--border-subtle)]">
+                          <div className="flex items-center justify-between">
+                            <span className="font-dm text-[10px] text-[var(--text-tertiary)]">Limite de faltas (25%):</span>
+                            <span className="font-mono text-xs font-semibold" style={{ color: excedeu || r.ausentes >= maxFaltas ? "var(--red-text)" : "var(--text-secondary)" }}>
+                              {r.ausentes} / {maxFaltas}
+                            </span>
+                          </div>
+                          <p className="font-dm text-[10px] mt-0.5" style={{ color: excedeu ? "var(--red-text)" : "var(--text-tertiary)" }}>
+                            {excedeu
+                              ? `Excedeu em ${Math.abs(restantes)} ${Math.abs(restantes) === 1 ? "falta" : "faltas"}`
+                              : restantes === 0
+                                ? "No limite"
+                                : `Restam ${restantes} ${restantes === 1 ? "falta" : "faltas"}`}
                           </p>
-                        )}
-                      </div>
-                    )}
+                        </div>
+                      );
+                    })()}
 
                     <div className="mt-2 flex justify-end">
                       <button onClick={(e) => { e.stopPropagation(); openFormForDisc(d.id); }}
